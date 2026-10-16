@@ -17,6 +17,7 @@ export function Nav({ route }: { route: 'home' | 'app' }) {
               <li><a href="#how">How it works</a></li>
               <li><a href="#guard">Guard</a></li>
               <li><a href="#risk">Risk</a></li>
+              <li><a href="#/pitch">Pitch</a></li>
             </>
           ) : (
             <>

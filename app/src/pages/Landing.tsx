@@ -10,7 +10,6 @@ import { planOpen, fromWad, WAD } from '../lib/math'
 import { fmtBtc, fmtCompact, fmtNum, fmtPct, fmtUsd } from '../lib/format'
 import { realizedVol, touchProbability } from '../lib/risk'
 import { reducedMotion } from '../lib/motion'
-import { Loader } from '../components/Loader'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -46,7 +45,6 @@ export function Landing() {
 
   return (
     <main id="top">
-      <Loader />
       <section className="wrap hero" id="hero">
         <div>
           <div className="eyebrow mono"><span>Mezo Buildathon</span><span>Track 1 · DeFi</span><span>MUSD · BTC</span></div>
@@ -59,7 +57,7 @@ export function Landing() {
           </p>
           <div className="cta-row">
             <a className="btn magnetic" href="#/app">Open the app <Arrow /></a>
-            <a className="btn btn--ghost" href="#how">See the transaction</a>
+            <a className="btn btn--ghost" href="#/pitch">Watch the pitch</a>
           </div>
         </div>
         <Rings layers={[1, ...(plan.flashBtc > 0n ? splitLayers(fromWad(plan.flashBtc)) : [])]}>
