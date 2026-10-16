@@ -80,9 +80,9 @@ function Wake({ onDone, done, setHeat }: SceneProps) {
   useLayoutEffect(() => {
     const el = cv.current!
     const ctx = el.getContext('2d')!
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1)
     const rand = mulberry32(3)
-    const N = 760
+    const N = 560
     const P = Array.from({ length: N }, (_, i) => ({
       x: rand(), y: rand(), vx: (rand() - 0.5) * 0.0005, vy: (rand() - 0.5) * 0.0005,
       a: (i / N) * Math.PI * 2 * 3 + rand() * 0.4, r: 0.35 + (i / N) * 0.65 + (rand() - 0.5) * 0.04,
@@ -97,6 +97,7 @@ function Wake({ onDone, done, setHeat }: SceneProps) {
       ctx.clearRect(0, 0, w, h)
       if (!s.R) { s.cx = w > 860 ? w * 0.7 : w * 0.5; s.cy = h * 0.55; s.R = Math.min(w, h) * 0.3 }
       s.spin += 0.002 * (0.3 + s.t)
+      const hot = new Path2D(), cold = new Path2D()
       for (const p of P) {
         if (s.t < 0.999) {
           p.x += p.vx; p.y += p.vy
@@ -112,9 +113,13 @@ function Wake({ onDone, done, setHeat }: SceneProps) {
         const ang = p.a + s.spin * (p.hot ? 1.5 : 1)
         const tx = s.cx + Math.cos(ang) * p.r * s.R, ty = s.cy + Math.sin(ang) * p.r * s.R
         x += (tx - x) * s.t; y += (ty - y) * s.t
-        ctx.fillStyle = p.hot ? `rgba(247,147,26,${0.5 + 0.5 * s.t})` : `rgba(237,237,234,${0.18 + 0.32 * s.t})`
-        ctx.beginPath(); ctx.arc(x, y, p.s * (1 + s.t * 0.3), 0, Math.PI * 2); ctx.fill()
+        const r = p.s * (1 + s.t * 0.3)
+        const path = p.hot ? hot : cold
+        path.moveTo(x + r, y); path.arc(x, y, r, 0, Math.PI * 2)
       }
+      // two fills per frame instead of one per particle
+      ctx.fillStyle = `rgba(237,237,234,${0.18 + 0.32 * s.t})`; ctx.fill(cold)
+      ctx.fillStyle = `rgba(247,147,26,${0.5 + 0.5 * s.t})`; ctx.fill(hot)
       // the gesture trail
       const tr = s.path.slice(-160)
       if (tr.length > 1) {
@@ -264,15 +269,20 @@ function Wake({ onDone, done, setHeat }: SceneProps) {
   )
 }
 
-/* ================================================================== 2 · the loop, played */
+/* ================================================================== 2 · the loop, then Coil */
 
 const STEPS = ['open trove', 'borrow MUSD', 'approve', 'swap → BTC', 'deposit BTC']
 
+/**
+ * The manual loop plays by itself, one transaction at a time, slow on purpose. The only action
+ * is "Coil it": it collapses the 25 transactions into one and the wordmark uncoils.
+ */
 function Loop({ onDone, done }: SceneProps) {
   const root = useRef<HTMLDivElement>(null)
+  const cells = useRef<(HTMLElement | null)[]>([])
   const [count, setCount] = useState(done ? 25 : 0)
   const [coiled, setCoiled] = useState(done)
-  const cells = useRef<(HTMLElement | null)[]>([])
+  const coiledRef = useRef(done)
   const spiral = useMemo(() => {
     let d = ''
     for (let i = 0; i <= 700; i++) {
@@ -282,66 +292,85 @@ function Loop({ onDone, done }: SceneProps) {
     return d
   }, [])
 
+  // The tedium: one transaction every 340 ms until the visitor coils it (or all 25 are sent).
+  useEffect(() => {
+    if (done) return
+    let n = 0
+    let alive = true
+    const tick = gsap.delayedCall(1.4, function run() {
+      if (!alive || coiledRef.current || n >= 25) return
+      n++
+      setCount(n)
+      const c = cells.current[n - 1]
+      if (c) gsap.fromTo(c, { scale: 0.4 }, { scale: 1, duration: 0.4, ease: 'back.out(3)' })
+      gsap.to('.s2-meter i', { scaleX: n / 25, duration: 0.3 })
+      gsap.to('.s2-spiral', { drawSVG: `${(n / 25) * 100}%`, duration: 0.35 })
+      if (n < 25) gsap.delayedCall(0.34, run)
+    })
+    return () => { alive = false; tick.kill() }
+  }, [done])
+
   useEnter(root, (tl) => {
     rise(tl, '.s2-h', 0)
-    tl.from('.s2-sub', { opacity: 0, y: 14, duration: 1 }, 0.7)
-      .from('.p-txgrid i', { scale: 0, opacity: 0, duration: 0.5, ease: 'back.out(2)', stagger: { amount: 0.9, from: 'start' } }, 1.0)
-      .from('.s2-btns', { opacity: 0, y: 12, duration: 0.8 }, 1.6)
+    tl.from('.s2-sub', { opacity: 0, y: 14, duration: 1 }, 0.6)
+      .from('.p-txgrid i', { scale: 0, opacity: 0, duration: 0.45, ease: 'back.out(2)', stagger: { amount: 0.6 } }, 0.8)
+      .from('.s2-coil', { opacity: 0, y: 12, duration: 0.8 }, 1.2)
     if (!done) tl.set('.s2-spiral', { drawSVG: '0%' }, 0)
   })
 
-  const send = () => {
-    if (coiled || count >= 25) return
-    const n = count + 1
-    setCount(n)
-    const c = cells.current[n - 1]
-    if (c) gsap.fromTo(c, { scale: 0.4 }, { scale: 1, duration: 0.5, ease: 'back.out(3)' })
-    gsap.to('.s2-meter i', { scaleX: n / 25, duration: 0.5, ease: 'power2.out' })
-    gsap.to('.s2-spiral', { drawSVG: `${(n / 25) * 100}%`, duration: 0.6, ease: 'power2.out' })
-    if (n === 4) gsap.fromTo('.s2-coil', { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.7, ease: 'back.out(2)' })
-    if (n === 25) collapse(n, 'the hard way')
-  }
-
-  const collapse = (from: number, note = '25 → 1') => {
+  const coil = () => {
+    if (coiledRef.current) return
+    coiledRef.current = true
     setCoiled(true)
     const tl = gsap.timeline()
-    const rest = cells.current.slice(from)
-    tl.to(rest, { backgroundColor: '#111113', scale: 1, duration: 0.15, stagger: 0.03 })
-      .to('.s2-meter i', { scaleX: 1, duration: 0.6 }, 0)
-      .to('.s2-spiral', { drawSVG: '100%', duration: 0.8 }, 0)
-      .to(cells.current.slice(1), { scale: 0, opacity: 0, duration: 0.45, ease: 'back.in(2)', stagger: { amount: 0.5, from: 'end' } }, '+=0.2')
-      .to(cells.current[0], { scale: 1.6, duration: 0.6, ease: 'elastic.out(1, 0.5)' }, '>-0.2')
-      .to('.s2-spiral', { drawSVG: '0%', duration: 1.1, ease: 'power3.inOut' }, '<')
-      .to('.s2-done', { opacity: 1, y: 0, duration: 0.8 }, '>-0.3')
+    tl.to(cells.current.slice(1), { scale: 0, opacity: 0, duration: 0.4, ease: 'back.in(2)', stagger: { amount: 0.45, from: 'end' } })
+      .to(cells.current[0], { scale: 1.5, duration: 0.6, ease: 'elastic.out(1, 0.5)' }, '>-0.15')
+      .to('.s2-spiral', { drawSVG: '0%', duration: 1, ease: 'power3.inOut' }, 0)
+      .to('.s2-meter i', { scaleX: 0.04, backgroundColor: ORANGE, duration: 0.8 }, 0)
+      .to('.s2-left', { opacity: 0, y: -30, duration: 0.6, ease: 'power2.in' }, 0.7)
+      .set('.s2-left', { display: 'none' })
+      .set('.s2-reveal', { display: 'grid' })
+      .fromTo('.s2-word span', { '--cw': 62, yPercent: 100 }, { '--cw': 125, yPercent: 0, duration: 1.5, ease: 'expo.out', stagger: 0.08 })
+    // split only once the block is displayed, so SplitText can measure real lines
+    tl.add(() => { rise(gsap.timeline(), root.current!.querySelector('.s2-tag')!, 0) }, '<0.7')
+    tl.from('.s2-meta', { opacity: 0, y: 10, duration: 0.8 }, '<0.5')
     const n = root.current!.querySelector('.s2-n')
-    tl.add(() => { tweenText(n, 25, 1, (v) => String(Math.max(1, Math.round(v))).padStart(2, '0'), 1.4) }, 0.9)
-    onDone(250, note)
+    tl.add(() => { tweenText(n, Math.max(count, 1), 1, (v) => String(Math.max(1, Math.round(v))).padStart(2, '0'), 1.2) }, 0.2)
+    onDone(250, '25 transactions → 1')
   }
 
-  const step = count === 0 ? 'nothing yet' : count === 1 ? STEPS[0] : STEPS[1 + ((count - 2) % 4)]
+  const step = count === 0 ? '…' : count === 1 ? STEPS[0] : STEPS[1 + ((count - 2) % 4)]
   return (
     <section className="scene scene--light" ref={root}>
       <div className="scene__in">
         <div className="p-row">
           <div style={{ display: 'grid', gap: 22, minWidth: 0 }}>
-            <div className="p-eyebrow"><span>The problem</span><span>try it</span></div>
-            <h2 className="p-h s2-h">Leverage on Mezo today is a <em>loop</em>.</h2>
-            <p className="p-sub s2-sub">Reaching 3× by hand means opening a trove, then borrowing, approving, swapping and depositing. Again and again. Go on, send them yourself.</p>
+            <div className="s2-left" style={{ display: coiled && done ? 'none' : 'grid', gap: 22 }}>
+              <div className="p-eyebrow"><span>The problem</span></div>
+              <h2 className="p-h s2-h">Leverage on Mezo today is a <em>loop</em>.</h2>
+              <p className="p-sub s2-sub">To reach 3× by hand: open a trove, then borrow, approve, swap and deposit. Again. And again. Six swaps, six fees, exposed between every step. Watch it.</p>
+            </div>
+            <div className="s2-reveal" style={{ display: coiled && done ? 'grid' : 'none', gap: 18 }}>
+              <div className="word s2-word" style={{ fontSize: 'clamp(88px, 15vw, 230px)' }} aria-label="Coil">
+                <span>C</span><span>O</span><span>I</span><span>L</span><span style={{ color: ORANGE }}>.</span>
+              </div>
+              <h2 className="p-h s2-tag" style={{ fontWeight: 520, maxWidth: '20ch', fontVariationSettings: "'wdth' 88", fontSize: 'clamp(30px, 4vw, 60px)' }}>Leveraged Bitcoin in one signature.</h2>
+              <div className="p-eyebrow s2-meta" style={{ opacity: 0.7 }}><span>1 signature</span><span>1 transaction</span><span>the trove stays yours</span></div>
+            </div>
             <div className="p-txgrid" aria-label={`${count} of 25 transactions sent`}>
               {Array.from({ length: 25 }, (_, i) => (
-                <i key={i} ref={(el) => { cells.current[i] = el }} className={(i < count || (coiled && done) ? 'on' : '') + (i === 0 ? ' first' : '')} />
+                <i key={i} ref={(el) => { cells.current[i] = el }} className={(i < count ? 'on' : '') + (i === 0 ? ' first' : '')}
+                  style={coiled && done && i > 0 ? { opacity: 0, transform: 'scale(0)' } : undefined} />
               ))}
             </div>
-            <div className="p-meter s2-meter" aria-hidden="true"><i style={{ transform: `scaleX(${done ? 1 : 0})` }} /></div>
-            <div style={{ display: 'flex', gap: 18, alignItems: 'baseline', flexWrap: 'wrap' }}>
-              <span className="p-big s2-n" style={{ fontSize: 'clamp(54px, 7vw, 110px)' }}>{coiled && done ? '01' : String(count).padStart(2, '0')}</span>
-              <span className="p-mono" style={{ fontSize: 14, opacity: 0.7 }}>/ 25 transactions · last: <span style={{ color: 'var(--p-acc-ink)' }}>{coiled ? 'coil()' : step}</span></span>
+            <div className="p-meter s2-meter" aria-hidden="true"><i style={{ transform: `scaleX(${done ? 0.04 : 0})` }} /></div>
+            <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="p-big s2-n" style={{ fontSize: 'clamp(54px, 7vw, 110px)' }}>{coiled ? '01' : String(count).padStart(2, '0')}</span>
+              <span className="p-mono" style={{ fontSize: 14, opacity: 0.7, minWidth: '22ch' }}>/ 25 transactions · <span style={{ color: 'var(--p-acc-ink)' }}>{coiled ? 'coil()' : step}</span></span>
+              <button className={'pbtn pbtn--solid s2-coil' + (coiled ? '' : ' is-pulse')} data-cursor="Coil" onClick={coil} disabled={coiled} style={{ fontSize: 13, padding: '16px 22px' }}>
+                {coiled ? 'Coiled ✓' : 'Coil it instead'}
+              </button>
             </div>
-            <div className="s2-btns" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }} data-interactive>
-              <button className="pbtn pbtn--dark" data-cursor="Click" onClick={send} disabled={coiled}>Send next transaction</button>
-              <button className="pbtn pbtn--solid s2-coil" data-cursor="Coil" style={{ opacity: count >= 4 && !coiled ? 1 : 0, pointerEvents: count >= 4 && !coiled ? 'auto' : 'none' }} onClick={() => collapse(count)}>Coil it instead</button>
-            </div>
-            <p className="p-sub s2-done" style={{ opacity: done ? 1 : 0, transform: done ? 'none' : 'translateY(10px)' }}>One signature, one transaction, one swap. That is Coil.</p>
           </div>
           <svg className="p-svg s2-spiral-wrap" viewBox="0 0 340 340" aria-hidden="true" style={{ maxWidth: 420, justifySelf: 'center' }}>
             <path d={spiral} fill="none" stroke="rgba(17,17,19,0.08)" strokeWidth="2" />
@@ -354,7 +383,7 @@ function Loop({ onDone, done }: SceneProps) {
   )
 }
 
-/* ================================================================== 3 · plug the pieces */
+/* ================================================================== 3 · the three pieces wire themselves */
 
 const PIECES = [
   { t: 'Flash swaps', p: 'Mezo Pools send tokens first, call you back, and only check they were paid at the end of the transaction.', c: 'Pool.swap → hook()' },
@@ -362,95 +391,69 @@ const PIECES = [
   { t: 'Native BTC', p: 'BTC is the gas coin and an ERC-20 over the same balance, so flashed BTC goes straight in as collateral.', c: '0x7b7c…0000' },
 ]
 
-function Pieces({ onDone, done }: SceneProps) {
+function Pieces({ onDone }: SceneProps) {
   const root = useRef<HTMLDivElement>(null)
   const core = useRef<HTMLDivElement>(null)
   const cards = useRef<(HTMLDivElement | null)[]>([])
-  const [plugged, setPlugged] = useState<boolean[]>(done ? [true, true, true] : [false, false, false])
   const [wires, setWires] = useState<string[]>([])
-  const pluggedRef = useRef(plugged)
-  pluggedRef.current = plugged
 
-  const wireFor = (i: number) => {
-    const r = root.current!.getBoundingClientRect()
-    const a = cards.current[i]!.getBoundingClientRect()
-    const b = core.current!.getBoundingClientRect()
-    const x1 = a.left + a.width / 2 - r.left, y1 = a.bottom - r.top
-    const x2 = b.left + b.width / 2 - r.left, y2 = b.top + b.height / 2 - r.top
-    return `M${x1} ${y1} C${x1} ${y1 + 80} ${x2} ${y2 - 120} ${x2} ${y2}`
-  }
-
-  const plug = (i: number) => {
-    if (pluggedRef.current[i]) return
-    const next = pluggedRef.current.map((v, k) => v || k === i)
-    setPlugged(next)
-    gsap.to(cards.current[i], { x: 0, y: 0, rotation: 0, duration: 0.8, ease: 'elastic.out(1, 0.6)' })
-    setWires((w) => { const c = [...w]; c[i] = wireFor(i); return c })
-    gsap.fromTo(core.current, { scale: 1.12 }, { scale: 1, duration: 0.8, ease: 'elastic.out(1, 0.4)' })
-    if (next.every(Boolean)) {
-      const tl = gsap.timeline({ delay: 0.5 })
-      tl.to('.s3-core-label', { duration: 1.2, scrambleText: { text: 'COIL', chars: '01₿×', speed: 0.5 } })
-        .to(core.current, { boxShadow: '0 0 0 14px rgba(247,147,26,0.12), 0 0 80px 10px rgba(247,147,26,0.35)', duration: 0.8 }, 0)
-        .to('.s3-foot', { opacity: 1, y: 0, duration: 0.8 }, 0.4)
-      onDone(300, 'three pieces wired')
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (!root.current || !core.current) return
+      const r = root.current.getBoundingClientRect()
+      const b = core.current.getBoundingClientRect()
+      setWires(cards.current.map((el) => {
+        const a = el!.getBoundingClientRect()
+        const x1 = a.left + a.width / 2 - r.left, y1 = a.bottom - r.top
+        const x2 = b.left + b.width / 2 - r.left, y2 = b.top + b.height / 2 - r.top
+        return `M${x1} ${y1} C${x1} ${y1 + 70} ${x2} ${y2 - 110} ${x2} ${y2}`
+      }))
     }
-  }
-
-  useEffect(() => {
-    if (done) { setWires([0, 1, 2].map(wireFor)); return }
-    const ds = cards.current.map((el, i) =>
-      Draggable.create(el, {
-        type: 'x,y', zIndexBoost: true,
-        onPress() { gsap.to(el, { rotation: (i - 1) * 4, scale: 1.04, duration: 0.3 }) },
-        onRelease() { gsap.to(el, { scale: 1, duration: 0.3 }) },
-        onDragEnd() {
-          if (this.hitTest(core.current!, '18%')) plug(i)
-          else gsap.to(el, { x: 0, y: 0, rotation: 0, duration: 0.9, ease: 'elastic.out(1, 0.5)' })
-        },
-        onClick() { plug(i) },
-      })[0],
-    )
-    return () => ds.forEach((d) => d.kill())
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const t = setTimeout(measure, 60)
+    window.addEventListener('resize', measure)
+    return () => { clearTimeout(t); window.removeEventListener('resize', measure) }
   }, [])
 
   useEnter(root, (tl) => {
     rise(tl, '.s3-h', 0)
-    tl.from(cards.current, { rotateY: -70, rotateX: 18, z: -240, opacity: 0, transformOrigin: '0% 50%', duration: 1.5, ease: 'expo.out', stagger: 0.2 }, 0.6)
-      .from('.p-card .draw', { drawSVG: '0%', duration: 1.4, ease: 'power2.inOut', stagger: 0.08 }, 1.2)
+    tl.from(cards.current, { rotateY: -70, rotateX: 18, z: -240, opacity: 0, transformOrigin: '0% 50%', duration: 1.5, ease: 'expo.out', stagger: 0.25 }, 0.5)
+      .from('.p-card .draw', { drawSVG: '0%', duration: 1.4, ease: 'power2.inOut', stagger: 0.08 }, 1.1)
       .from(core.current, { scale: 0, duration: 1, ease: 'back.out(2)' }, 1.4)
+      .fromTo('.s3-wire', { drawSVG: '0%' }, { drawSVG: '100%', duration: 1, ease: 'power2.inOut', stagger: 0.45 }, 2.0)
+      .add(() => cards.current.forEach((c, i) => gsap.delayedCall(i * 0.45, () => c?.classList.add('is-plugged'))), 2.2)
+      .to('.s3-core-label', { duration: 1.2, scrambleText: { text: 'COIL', chars: '01₿×', speed: 0.5 } }, 3.5)
+      .add(() => core.current?.classList.add('is-live'), 3.5)
+      .fromTo('.s3-foot', { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.8 }, 3.9)
+      .add(() => onDone(0), 4.2)
   })
 
-  useLayoutEffect(() => {
-    gsap.utils.toArray<SVGPathElement>('.s3-wire.fresh').forEach((p) => {
-      p.classList.remove('fresh')
-      gsap.fromTo(p, { drawSVG: '0%' }, { drawSVG: '100%', duration: 0.9, ease: 'power2.inOut' })
-    })
-  }, [wires])
+  const tilt = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    gsap.to(e.currentTarget, { rotateY: ((e.clientX - r.left) / r.width - 0.5) * 12, rotateX: -((e.clientY - r.top) / r.height - 0.5) * 12, transformPerspective: 800, duration: 0.5 })
+  }
+  const untilt = (e: React.PointerEvent<HTMLDivElement>) => gsap.to(e.currentTarget, { rotateY: 0, rotateX: 0, duration: 0.9, ease: 'elastic.out(1, 0.5)' })
 
   return (
     <section className="scene scene--dark scene--dots" ref={root}>
       <svg className="s3-wires" aria-hidden="true">
-        {wires.map((d, i) => d && <path key={i} className="s3-wire fresh" d={d} fill="none" stroke={ORANGE} strokeWidth="2" strokeDasharray="1 0" />)}
+        {wires.map((d, i) => <path key={i} className="s3-wire" d={d} fill="none" stroke={ORANGE} strokeWidth="2" />)}
       </svg>
       <div className="scene__in">
-        <div className="p-eyebrow"><span>The insight</span><span>drag each piece into the core</span></div>
+        <div className="p-eyebrow"><span>The insight</span></div>
         <h2 className="p-h s3-h">Mezo already ships the <em>three pieces</em>.</h2>
-        <div className="p-cards" data-interactive>
+        <div className="p-cards">
           {PIECES.map((c, i) => (
-            <div key={c.t} ref={(el) => { cards.current[i] = el }} className={'p-card' + (plugged[i] ? ' is-plugged' : '')} data-cursor={plugged[i] ? undefined : 'Drag'}>
+            <div key={c.t} ref={(el) => { cards.current[i] = el }} className="p-card" onPointerMove={tilt} onPointerLeave={untilt}>
               <Icon i={i} />
-              <h3>{c.t} {plugged[i] && <span className="p-check">✓</span>}</h3>
+              <h3>{c.t}</h3>
               <p>{c.p}</p>
               <code>{c.c}</code>
             </div>
           ))}
         </div>
         <div style={{ display: 'grid', justifyItems: 'center', gap: 14 }}>
-          <div className={'s3-core' + (plugged.every(Boolean) ? ' is-live' : '')} ref={core}>
-            <span className="s3-core-label p-mono">{done ? 'COIL' : `${plugged.filter(Boolean).length}/3`}</span>
-          </div>
-          <p className="p-sub s3-foot" style={{ opacity: done ? 1 : 0, transform: done ? 'none' : 'translateY(10px)', textAlign: 'center' }}>Wire them together and leverage stops being a loop.</p>
+          <div className="s3-core" ref={core}><span className="s3-core-label p-mono">···</span></div>
+          <p className="p-sub s3-foot" style={{ textAlign: 'center' }}>Wire them together and leverage stops being a loop.</p>
         </div>
       </div>
     </section>
@@ -475,90 +478,6 @@ function Icon({ i }: { i: number }) {
       <circle className="draw" cx="32" cy="32" r="22" stroke={ORANGE} strokeWidth="3" />
       <path className="draw" d="M26 20 V44 M26 22 H36 a5 5 0 0 1 0 10 H26 M26 32 H38 a6 6 0 0 1 0 12 H26" stroke="#ededea" strokeWidth="2.5" strokeLinejoin="round" />
     </svg>
-  )
-}
-
-/* ================================================================== 4 · hold to uncoil */
-
-function Hold({ onDone, done }: SceneProps) {
-  const root = useRef<HTMLDivElement>(null)
-  const ring = useRef<SVGCircleElement>(null)
-  const st = useRef({ c: done ? 1 : 0, locked: done, tw: null as gsap.core.Tween | null })
-  const [locked, setLocked] = useState(done)
-  const C = 2 * Math.PI * 30
-
-  const apply = () => {
-    const c = st.current.c
-    root.current?.querySelectorAll<HTMLElement>('.s4-word span').forEach((s, i) => {
-      s.style.setProperty('--cw', String(62 + 63 * c))
-      s.style.transform = `translateY(${(1 - c) * (i % 2 ? 6 : -6)}px)`
-    })
-    if (ring.current) ring.current.style.strokeDashoffset = String(C * (1 - c))
-    const pct = root.current?.querySelector('.s4-pct')
-    if (pct) pct.textContent = `${Math.round(c * 100)}%`
-  }
-  const lock = () => {
-    st.current.locked = true
-    setLocked(true)
-    const tl = gsap.timeline()
-    tl.to(root.current, { backgroundColor: '#f4f4f1', color: '#111113', duration: 1.2, ease: 'power2.inOut' })
-      .to('.s4-holdui', { opacity: 0, y: 20, duration: 0.5 }, 0)
-      .set('.s4-after', { visibility: 'visible' })
-    rise(tl, root.current!.querySelector('.s4-tag')!, 0.6)
-    tl.from('.s4-meta span', { opacity: 0, y: 10, stagger: 0.15, duration: 0.8 }, 1.3)
-    onDone(150, 'uncoiled')
-  }
-  const press = () => {
-    const s = st.current
-    if (s.locked) return
-    s.tw?.kill()
-    s.tw = gsap.to(s, { c: 1, duration: 1.9 * (1 - s.c), ease: 'none', onUpdate: apply, onComplete: lock })
-  }
-  const release = () => {
-    const s = st.current
-    if (s.locked) return
-    s.tw?.kill()
-    s.tw = gsap.to(s, { c: 0, duration: 1.1, ease: 'elastic.out(1, 0.45)', onUpdate: apply })
-  }
-  useEffect(() => {
-    apply()
-    const kd = (e: KeyboardEvent) => { if (e.key === ' ' && !e.repeat) { e.preventDefault(); press() } }
-    const ku = (e: KeyboardEvent) => { if (e.key === ' ') release() }
-    window.addEventListener('keydown', kd)
-    window.addEventListener('keyup', ku)
-    return () => { window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); st.current.tw?.kill() }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEnter(root, (tl) => {
-    if (done) return
-    tl.from('.s4-word span', { yPercent: 110, duration: 1.2, ease: 'expo.out', stagger: 0.08 }, 0)
-      .from('.s4-holdui', { opacity: 0, y: 20, duration: 0.9 }, 0.8)
-  })
-
-  return (
-    <section className={'scene ' + (done ? 'scene--light' : 'scene--accent')} ref={root} data-cursor={locked ? undefined : 'Hold'}
-      onPointerDown={press} onPointerUp={release} onPointerLeave={release} onPointerCancel={release} style={{ alignContent: 'center', userSelect: 'none' }}>
-      <div className="scene__in" style={{ justifyItems: 'start' }}>
-        <div className="word s4-word" style={{ fontSize: 'clamp(110px, 24vw, 380px)' }} aria-label="Coil">
-          <span>C</span><span>O</span><span>I</span><span>L</span><span style={{ color: locked ? ORANGE : '#141414' }}>.</span>
-        </div>
-        <div className="s4-holdui" style={{ display: locked ? 'none' : 'flex', gap: 16, alignItems: 'center' }}>
-          <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true">
-            <circle cx="36" cy="36" r="30" fill="none" stroke="rgba(20,20,20,0.2)" strokeWidth="3" />
-            <circle ref={ring} cx="36" cy="36" r="30" fill="none" stroke="#141414" strokeWidth="4" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C} transform="rotate(-90 36 36)" />
-          </svg>
-          <div>
-            <div className="p-mono" style={{ fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Press and hold to uncoil · or hold Space</div>
-            <div className="p-mono s4-pct" style={{ fontSize: 28 }}>0%</div>
-          </div>
-        </div>
-        <div className="s4-after" style={{ visibility: locked ? 'visible' : 'hidden', display: 'grid', gap: 18 }}>
-          <h2 className="p-h s4-tag" style={{ fontWeight: 520, maxWidth: '22ch', fontVariationSettings: "'wdth' 88" }}>Leveraged Bitcoin in one signature.</h2>
-          <div className="p-eyebrow s4-meta" style={{ opacity: 1 }}><span>1 signature</span><span>1 transaction</span><span>the trove stays yours</span></div>
-        </div>
-      </div>
-    </section>
   )
 }
 
@@ -785,7 +704,7 @@ function GuardGame({ data, onDone }: SceneProps) {
   )
 }
 
-/* ================================================================== 7 · Monte Carlo sandbox */
+/* ================================================================== 6 · Monte Carlo field (drag is optional) */
 
 function RiskField({ data, onDone, setHeat }: SceneProps) {
   const root = useRef<HTMLDivElement>(null)
@@ -795,61 +714,74 @@ function RiskField({ data, onDone, setHeat }: SceneProps) {
   const [lev, setLev] = useState(3)
   const reveal = useRef({ v: 0 })
   const liq = useMemo(() => planOpen(data.m, WAD, lev).liqPrice || s0 * 0.73, [data.m, lev, s0])
-  const sim = useMemo(() => simulate(s0, sigma, 30, 220, liq, 21), [s0, sigma, liq])
+  const sim = useMemo(() => simulate(s0, sigma, 30, 200, liq, 21), [s0, sigma, liq])
   const mc = sim.breached.reduce((a, b) => a + b, 0) / sim.breached.length
   const p30 = touchProbability(s0, liq, sigma, 30 / 365)
-  const touched = useRef(false)
 
-  useEffect(() => {
-    const el = cv.current!
+  // Redraw only when something changes: the paths, or the reveal tween.
+  const draw = useRef<() => void>(() => {})
+  draw.current = () => {
+    const el = cv.current
+    if (!el) return
     const ctx = el.getContext('2d')!
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
-    let raf = 0
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1)
+    const w = el.clientWidth, h = el.clientHeight
+    if (el.width !== Math.round(w * dpr)) { el.width = w * dpr; el.height = h * dpr }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
     const lo = s0 * 0.45, hi = s0 * 1.7
-    const draw = () => {
-      const w = el.clientWidth, h = el.clientHeight
-      if (el.width !== Math.round(w * dpr)) { el.width = w * dpr; el.height = h * dpr }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.clearRect(0, 0, w, h)
-      const X = (dd: number) => (dd / 30) * w
-      const Yy = (v: number) => (1 - (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))) * h
-      const k = reveal.current.v
-      const n = Math.floor(k * sim.paths.length)
+    const X = (dd: number) => (dd / 30) * w
+    const Yy = (v: number) => (1 - (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))) * h
+    const n = Math.floor(reveal.current.v * sim.paths.length)
+    // two batched strokes (survivors, breaches) instead of one per path
+    for (const breach of [false, true]) {
+      ctx.beginPath()
       for (let i = 0; i < n; i++) {
-        const p = sim.paths[i], bd = sim.breachDay[i]
-        ctx.lineWidth = 1
-        ctx.strokeStyle = bd >= 0 ? 'rgba(255,106,92,0.5)' : 'rgba(237,237,234,0.14)'
-        ctx.beginPath()
-        for (let dd = 0; dd <= 30; dd++) (dd ? ctx.lineTo : ctx.moveTo).call(ctx, X(dd), Yy(p[dd]))
-        ctx.stroke()
+        if ((sim.breachDay[i] >= 0) !== breach) continue
+        const p = sim.paths[i]
+        ctx.moveTo(X(0), Yy(p[0]))
+        for (let dd = 1; dd <= 30; dd++) ctx.lineTo(X(dd), Yy(p[dd]))
       }
-      ctx.setLineDash([3, 4]); ctx.strokeStyle = RED; ctx.lineWidth = 1.5
-      ctx.beginPath(); ctx.moveTo(0, Yy(liq)); ctx.lineTo(w, Yy(liq)); ctx.stroke(); ctx.setLineDash([])
-      ctx.fillStyle = RED; ctx.font = '11px "Martian Mono Variable", monospace'
-      ctx.fillText('liquidation ' + fmtUsd(liq), 8, Yy(liq) - 8)
-      raf = requestAnimationFrame(draw)
+      ctx.lineWidth = 1
+      ctx.strokeStyle = breach ? 'rgba(255,106,92,0.45)' : 'rgba(237,237,234,0.13)'
+      ctx.stroke()
     }
-    raf = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(raf)
-  }, [sim, s0, liq])
+    ctx.setLineDash([3, 4]); ctx.strokeStyle = RED; ctx.lineWidth = 1.5
+    ctx.beginPath(); ctx.moveTo(0, Yy(liq)); ctx.lineTo(w, Yy(liq)); ctx.stroke(); ctx.setLineDash([])
+    ctx.fillStyle = RED; ctx.font = '11px "Martian Mono Variable", monospace'
+    ctx.fillText('liquidation ' + fmtUsd(liq), 8, Yy(liq) - 8)
+  }
+  useEffect(() => {
+    const t = gsap.fromTo(reveal.current, { v: Math.min(reveal.current.v, 0.5) }, { v: 1, duration: 1.1, ease: 'power2.out', onUpdate: () => draw.current() })
+    return () => { t.kill() }
+  }, [sim])
+  useEffect(() => {
+    const on = () => draw.current()
+    window.addEventListener('resize', on)
+    return () => window.removeEventListener('resize', on)
+  }, [])
 
-  useEffect(() => { gsap.fromTo(reveal.current, { v: Math.min(reveal.current.v, 0.4) }, { v: 1, duration: 1.2, ease: 'power2.out' }) }, [sim])
-
+  const pending = useRef(false)
   const scrub = (e: React.PointerEvent) => {
-    if (e.buttons !== 1 && e.pointerType === 'mouse') return
+    if (e.buttons !== 1) return
     const r = cv.current!.getBoundingClientRect()
     const fx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
     const fy = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
-    setSigma(Math.round((0.2 + fx * 1.0) * 100) / 100)
-    setLev(Math.round((6 - fy * 4.5) * 10) / 10)
-    setHeat(fx)
-    if (!touched.current) { touched.current = true; onDone(150, 'stress-tested') }
+    if (pending.current) return
+    pending.current = true
+    requestAnimationFrame(() => {
+      pending.current = false
+      setSigma(Math.round((0.2 + fx * 1.0) * 20) / 20)
+      setLev(Math.round((6 - fy * 4.5) * 4) / 4)
+      setHeat(fx)
+    })
   }
 
   useEnter(root, (tl) => {
     rise(tl, '.s7-h', 0)
     tl.from('.s7-read', { opacity: 0, y: 14, stagger: 0.12, duration: 0.8 }, 0.6)
       .to('.s7-f', { duration: 2.8, text: { value: 'P(τ ≤ T) = Φ((ln L/S − νT) / σ√T) + (L/S)^(2ν/σ²) · Φ((ln L/S + νT) / σ√T)' }, ease: 'none' }, 1.2)
+      .add(() => onDone(0), 2)
   })
 
   return (
@@ -857,21 +789,18 @@ function RiskField({ data, onDone, setHeat }: SceneProps) {
       <div className="scene__in">
         <div className="p-row" style={{ ['--cols' as string]: '1fr 1.25fr' }}>
           <div style={{ display: 'grid', gap: 20, minWidth: 0 }}>
-            <div className="p-eyebrow"><span>Risk cockpit</span><span>drag on the field</span></div>
+            <div className="p-eyebrow"><span>Risk cockpit</span><span>3× · 30 days</span></div>
             <h2 className="p-h s7-h">Odds, <em>not vibes</em>.</h2>
             <div className="s7-read" style={{ display: 'flex', gap: 26, flexWrap: 'wrap' }}>
-              <div><div className="p-eyebrow">volatility →</div><div className="p-big" style={{ fontSize: 'clamp(36px, 4.4vw, 68px)' }}>{Math.round(sigma * 100)}%</div></div>
-              <div><div className="p-eyebrow">leverage ↑</div><div className="p-big" style={{ fontSize: 'clamp(36px, 4.4vw, 68px)' }}>{lev.toFixed(1)}×</div></div>
-            </div>
-            <div className="s7-read" style={{ display: 'flex', gap: 26, flexWrap: 'wrap' }}>
               <div><div className="p-eyebrow">30-day odds · model</div><div className="p-big" style={{ fontSize: 'clamp(36px, 4.4vw, 68px)' }}>{(p30 * 100).toFixed(1)}%</div></div>
-              <div><div className="p-eyebrow">Monte Carlo · 220 paths</div><div className="p-big" style={{ fontSize: 'clamp(36px, 4.4vw, 68px)', color: RED }}>{(mc * 100).toFixed(1)}%</div></div>
+              <div><div className="p-eyebrow">Monte Carlo · 200 paths</div><div className="p-big" style={{ fontSize: 'clamp(36px, 4.4vw, 68px)', color: RED }}>{(mc * 100).toFixed(1)}%</div></div>
             </div>
+            <div className="s7-read p-mono" style={{ fontSize: 13, opacity: 0.7 }}>σ {Math.round(sigma * 100)}% · leverage {lev.toFixed(2)}× · liquidation {fmtUsd(liq)}</div>
             <div className="p-formula s7-f" aria-label="First-passage probability formula" />
           </div>
           <div className="s7-field" data-interactive data-cursor="Drag" onPointerDown={scrub} onPointerMove={scrub}>
             <canvas ref={cv} className="p-canvas" aria-label={`Monte Carlo paths, ${Math.round(mc * 100)} percent reach liquidation`} />
-            <span className="s7-axis s7-axis--x p-mono">volatility →</span>
+            <span className="s7-axis s7-axis--x p-mono">drag · volatility →</span>
             <span className="s7-axis s7-axis--y p-mono">leverage ↑</span>
           </div>
         </div>
@@ -880,7 +809,7 @@ function RiskField({ data, onDone, setHeat }: SceneProps) {
   )
 }
 
-/* ================================================================== 8 · radar, scrubbed */
+/* ================================================================== 7 · radar (sweeps by itself, drag is optional) */
 
 function RadarScrub({ data, onDone }: SceneProps) {
   const root = useRef<HTMLDivElement>(null)
@@ -891,8 +820,8 @@ function RadarScrub({ data, onDone }: SceneProps) {
     return Array.from({ length: data.m.troves || 247 }, () => ({ cr: 1.12 + Math.pow(r(), 1.6) * 4, debt: 2000 + Math.pow(r(), 3) * 400_000 })).sort((a, b) => a.cr - b.cr)
   }, [data.radar, data.m.troves])
   const maxLog = Math.max(...troves.map((t) => Math.log10(t.debt)))
-  const [pos, setPos] = useState(0.4)
-  const touched = useRef(false)
+  const [pos, setPos] = useState(0.75)
+  const sweep = useRef<gsap.core.Tween | null>(null)
   const i = Math.min(troves.length - 1, Math.floor(pos * troves.length))
   const cr = troves[i]?.cr ?? 1.5
   const lev = cr > 1.0001 ? 1 / (1 - 1 / (cr * 1.006)) : 10
@@ -900,102 +829,74 @@ function RadarScrub({ data, onDone }: SceneProps) {
   for (let k = 0; k < i; k++) if (troves[k].cr >= 1.1) ahead += Math.max(0, troves[k].debt - 200)
 
   const scrub = (e: React.PointerEvent) => {
-    if (e.buttons !== 1 && e.pointerType === 'mouse') return
+    if (e.buttons !== 1) return
+    sweep.current?.kill()
     const r = bars.current!.getBoundingClientRect()
     setPos(Math.min(0.999, Math.max(0, (e.clientX - r.left) / r.width)))
-    if (!touched.current) { touched.current = true; onDone(150, 'found your place') }
   }
   useEnter(root, (tl) => {
     rise(tl, '.s8-h', 0)
-    tl.from('.p-radar i', { scaleY: 0, duration: 0.8, ease: 'power3.out', stagger: { amount: 1.4 } }, 0.5)
-      .from('.p-radar .you', { opacity: 0, duration: 0.5 }, 1.6)
+    tl.from('.p-radar i', { scaleY: 0, duration: 0.8, ease: 'power3.out', stagger: { amount: 1.2 } }, 0.5)
+      .add(() => {
+        const o = { p: 0.75 }
+        sweep.current = gsap.to(o, { p: 0.12, duration: 3.2, ease: 'power2.inOut', onUpdate: () => setPos(o.p) })
+      }, 1.8)
+      .add(() => onDone(0), 2.2)
   })
   return (
     <section className="scene scene--light" ref={root}>
       <div className="scene__in">
-        <div className="p-eyebrow"><span>Redemption radar</span><span>{data.radar ? `${troves.length} live troves on Mezo testnet` : 'troves on Mezo testnet'}</span><span>drag along the queue</span></div>
+        <div className="p-eyebrow"><span>Redemption radar</span><span>{data.radar ? `${troves.length} live troves on Mezo testnet` : 'troves on Mezo testnet'}</span></div>
         <h2 className="p-h s8-h">Know your place in the <em>redemption queue</em>.</h2>
         <div className="p-radar" ref={bars} data-interactive data-cursor="Drag" onPointerDown={scrub} onPointerMove={scrub}>
           {troves.map((t, k) => <i key={k} className={k < i ? 'ahead' : ''} style={{ height: `${12 + (88 * Math.log10(t.debt)) / maxLog}%` }} />)}
           <span className="you" style={{ left: `${(i / troves.length) * 100}%` }} />
         </div>
         <div style={{ display: 'flex', gap: 36, flexWrap: 'wrap', alignItems: 'baseline' }}>
-          <div><div className="p-eyebrow">your ratio</div><div className="p-big" style={{ fontSize: 'clamp(40px, 5vw, 80px)' }}>{Math.round(cr * 100)}%</div></div>
           <div><div className="p-eyebrow">≈ leverage</div><div className="p-big" style={{ fontSize: 'clamp(40px, 5vw, 80px)' }}>{Math.min(lev, 12).toFixed(1)}×</div></div>
           <div><div className="p-eyebrow">MUSD redeemed before you</div><div className="p-big" style={{ fontSize: 'clamp(40px, 5vw, 80px)', color: 'var(--p-acc-ink)' }}>{fmtCompact(ahead)}</div></div>
-          <p className="p-sub" style={{ maxWidth: '36ch' }}>MUSD redeems the lowest ratios first. More leverage moves you to the front of the line.</p>
+          <p className="p-sub" style={{ maxWidth: '36ch' }}>MUSD redeems the lowest ratios first. More leverage moves you to the front of the line; Coil shows how much cover you have, live.</p>
         </div>
       </div>
     </section>
   )
 }
 
-/* ================================================================== 9 · run the proof */
+/* ================================================================== 8 · proof (types itself) */
 
 function Terminal({ data, onDone }: SceneProps) {
   const root = useRef<HTMLDivElement>(null)
-  const steps = useMemo(() => [
-    { cmd: 'forge test --fork-url mezo_testnet', out: [['ok', '[PASS] test_fork_coilThenUnwind()   real MUSD + real MUSD/BTC pool'], ['ok', '22 passed · 0 failed · fuzzed open → close round trips']] },
-    { cmd: 'forge script Deploy.s.sol --broadcast', out: [['acc', `✓ CoilRouter ${data.router}`], ['dim', 'block 16,188,308 · Mezo testnet 31611 · 2.44M gas']] },
-    { cmd: 'coil status --live', out: [['', `BTC ${fmtUsd(fromWad(data.m.price))} · pool ${fmtCompact(fromWad(data.m.reserveBtc))} BTC · TCR ${Math.round(data.m.tcr * 100)}% · ${data.m.troves} troves`]] },
-  ], [data])
-  const [ran, setRan] = useState(0)
-  const typed = useRef<HTMLSpanElement>(null)
-  const runningRef = useRef(false)
-
-  useEffect(() => {
-    if (ran >= steps.length || !typed.current) return
-    typed.current.textContent = ''
-    const t = gsap.to(typed.current, { text: { value: steps[ran].cmd }, duration: steps[ran].cmd.length * 0.035, ease: 'none', delay: ran === 0 ? 1.2 : 0.2 })
-    return () => { t.kill() }
-  }, [ran, steps])
-
-  const run = () => {
-    if (runningRef.current || ran >= steps.length) return
-    runningRef.current = true
-    const n = ran + 1
-    setRan(n)
-    requestAnimationFrame(() => {
-      const outs = root.current!.querySelectorAll(`.l[data-step="${n - 1}"]`)
-      outs.forEach((el) => {
-        const text = el.getAttribute('data-text') ?? ''
-        el.textContent = ''
-        if (el.classList.contains('acc')) gsap.to(el, { duration: 1.1, scrambleText: { text, chars: '0123456789abcdefABCDEF', speed: 0.7, revealDelay: 0.2 } })
-        else gsap.to(el, { duration: Math.min(1, text.length * 0.018), text: { value: text }, ease: 'none' })
-      })
-      gsap.delayedCall(1.1, () => { runningRef.current = false })
-      if (n === steps.length) onDone(200, 'verified on-chain')
-    })
-  }
-  useEffect(() => {
-    const k = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); run() } }
-    window.addEventListener('keydown', k)
-    return () => window.removeEventListener('keydown', k)
-  })
+  const lines: [string, string][] = [
+    ['dim', '$ forge test --fork-url mezo_testnet'],
+    ['ok', '[PASS] test_fork_coilThenUnwind()   real MUSD + real MUSD/BTC pool'],
+    ['ok', '22 passed · 0 failed · fuzzed open → close round trips'],
+    ['dim', '$ forge script Deploy.s.sol --broadcast'],
+    ['acc', `✓ CoilRouter ${data.router}`],
+    ['dim', '$ coil status --live'],
+    ['', `BTC ${fmtUsd(fromWad(data.m.price))} · pool ${fmtCompact(fromWad(data.m.reserveBtc))} BTC · TCR ${Math.round(data.m.tcr * 100)}% · ${data.m.troves} troves`],
+  ]
   useEnter(root, (tl) => {
     rise(tl, '.s9-h', 0)
     tl.from('.p-term', { y: 40, opacity: 0, rotateX: 12, transformPerspective: 900, duration: 1.1, ease: 'expo.out' }, 0.3)
+    gsap.utils.toArray<HTMLElement>('.p-term .l').forEach((el, i) => {
+      const text = lines[i][1]
+      el.textContent = ''
+      if (lines[i][0] === 'acc') tl.to(el, { duration: 1.2, scrambleText: { text, chars: '0123456789abcdefABCDEF', speed: 0.7, revealDelay: 0.3 } }, '>0.2')
+      else tl.to(el, { duration: Math.min(1.2, text.length * 0.028), text: { value: text }, ease: 'none' }, i % 3 === 0 ? '>0.45' : '>0.15')
+    })
+    tl.add(() => onDone(0), '>')
   })
   return (
     <section className="scene scene--dark scene--dots" ref={root}>
       <div className="scene__in">
         <div className="p-row" style={{ ['--cols' as string]: '1fr 1.15fr' }}>
           <div style={{ display: 'grid', gap: 20 }}>
-            <div className="p-eyebrow"><span>Proof</span><span>press Enter to run</span></div>
+            <div className="p-eyebrow"><span>Proof</span></div>
             <h2 className="p-h s9-h" style={{ fontSize: 'clamp(34px, 4.6vw, 72px)' }}>Live on Mezo testnet. Tested against <em>the real thing</em>.</h2>
           </div>
-          <div className="p-term" role="log" aria-label="Test and deployment output" data-interactive data-cursor={ran < steps.length ? 'Run' : undefined} onClick={run}>
-            {steps.slice(0, ran).map((s, i) => (
-              <div key={i}>
-                <div className="l dim">$ {s.cmd}</div>
-                {s.out.map(([cls, text], j) => <div key={j} className={'l ' + cls} data-step={i} data-text={text}>{text}</div>)}
-              </div>
-            ))}
-            {ran < steps.length ? (
-              <div className="l"><span className="dim">$ </span><span ref={typed} /><span className="caret" /> <span className="p-enter">↵ Enter</span></div>
-            ) : (
-              <div className="l ok">All green. <span className="caret" /></div>
-            )}
+          <div className="p-term" role="log" aria-label="Test and deployment output">
+            {lines.map(([cls, text], i) => <div key={i} className={'l ' + cls}>{text}</div>)}
+            <span className="caret" />
           </div>
         </div>
       </div>
@@ -1015,7 +916,7 @@ function Model({ onDone }: SceneProps) {
       tl.add(() => { tweenText(b, 0, vals[i], (v) => (i === 2 ? `${Math.round(v)}k` : `${v.toFixed(2)}%`), 1.6) }, 0.7 + i * 0.18)
     })
     tl.from('.p-road li', { x: -24, opacity: 0, duration: 0.7, ease: 'power3.out', stagger: 0.12 }, 1.6)
-      .add(() => onDone(100, 'read the plan'), 2.8)
+      .add(() => onDone(0), 2.8)
   })
   const tilt = (e: React.PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -1099,14 +1000,13 @@ function Finale({ onExit, mode, sats }: SceneProps) {
 
 export const SCENES: Scene[] = [
   { id: 'wake', title: 'Wake your Bitcoin', theme: 'dark', hint: 'Draw a circle', Component: Wake },
-  { id: 'loop', title: 'The problem', theme: 'light', hint: 'Send a few transactions', Component: Loop },
-  { id: 'pieces', title: 'The insight', theme: 'dark', hint: 'Drag the pieces in', Component: Pieces },
-  { id: 'reveal', title: 'Coil', theme: 'accent', hint: 'Press and hold', Component: Hold },
-  { id: 'tx', title: 'How it works', theme: 'dark', hint: 'Set leverage, then sign', Component: Transaction },
-  { id: 'guard', title: 'Guard', theme: 'dark', hint: 'Set the trigger, crash BTC', Component: GuardGame },
-  { id: 'risk', title: 'Risk cockpit', theme: 'dark', hint: 'Drag on the field', Component: RiskField },
-  { id: 'radar', title: 'Redemption radar', theme: 'light', hint: 'Drag along the queue', Component: RadarScrub },
-  { id: 'proof', title: 'Proof', theme: 'dark', hint: 'Press Enter to run', Component: Terminal },
+  { id: 'loop', title: 'The loop, and Coil', theme: 'light', hint: 'Coil it', Component: Loop },
+  { id: 'pieces', title: 'The insight', theme: 'dark', hint: 'Scroll when ready', Component: Pieces },
+  { id: 'tx', title: 'How it works', theme: 'dark', hint: 'Sign the transaction', Component: Transaction },
+  { id: 'guard', title: 'Guard', theme: 'dark', hint: 'Crash BTC', Component: GuardGame },
+  { id: 'risk', title: 'Risk cockpit', theme: 'dark', hint: 'Scroll when ready', Component: RiskField },
+  { id: 'radar', title: 'Redemption radar', theme: 'light', hint: 'Scroll when ready', Component: RadarScrub },
+  { id: 'proof', title: 'Proof', theme: 'dark', hint: 'Scroll when ready', Component: Terminal },
   { id: 'model', title: 'Business & roadmap', theme: 'light', hint: 'Scroll when ready', Component: Model },
   { id: 'finale', title: 'Open the app', theme: 'dark', hint: 'Open the app', Component: Finale },
 ]

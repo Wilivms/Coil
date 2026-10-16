@@ -101,8 +101,7 @@ img, canvas, svg { max-width: 100%; }
 /* ------------------------------------------------------------------ nav */
 .nav {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30;
-  background: color-mix(in srgb, var(--paper) 84%, transparent);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
   border-bottom: 1px solid var(--rule);
 }
 .nav__in { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 60px; }

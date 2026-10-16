@@ -17,7 +17,7 @@ float noise(vec2 p){
   return mix(mix(dot(hash(i), f), dot(hash(i + vec2(1, 0)), f - vec2(1, 0)), u.x),
              mix(dot(hash(i + vec2(0, 1)), f - vec2(0, 1)), dot(hash(i + vec2(1, 1)), f - vec2(1, 1)), u.x), u.y);
 }
-float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ v += a * noise(p); p = p * 2.03 + 11.7; a *= 0.5; } return v; }
+float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++){ v += a * noise(p); p = p * 2.03 + 11.7; a *= 0.5; } return v; }
 void main(){
   vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
   vec2 m = (uMouse - 0.5 * uRes) / uRes.y;
@@ -76,25 +76,34 @@ export function Shader({ light, pulseKey, heat = 0 }: { light: number; pulseKey:
     const loc = gl.getAttribLocation(prog, 'aPos'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0)
     const U = (n: string) => gl.getUniformLocation(prog, n)
     const uRes = U('uRes'), uTime = U('uTime'), uMouse = U('uMouse'), uLight = U('uLight'), uPulse = U('uPulse'), uHeat = U('uHeat')
-    const dpr = Math.min(1.5, window.devicePixelRatio || 1)
-    const resize = () => { el.width = innerWidth * dpr; el.height = innerHeight * dpr; gl.viewport(0, 0, el.width, el.height) }
+    // Render below the screen's pixel density and adapt: the field is soft by nature, and a
+    // full-res retina fbm costs far more than it shows. Scale drops if frames run long.
+    let scale = Math.min(1, 1.1 / (window.devicePixelRatio || 1)) * Math.min(window.devicePixelRatio || 1, 1.25)
+    const resize = () => { el.width = Math.round(innerWidth * scale); el.height = Math.round(innerHeight * scale); gl.viewport(0, 0, el.width, el.height) }
     resize()
     window.addEventListener('resize', resize)
-    const move = (e: PointerEvent) => { u.current.tx = e.clientX * dpr; u.current.ty = (innerHeight - e.clientY) * dpr }
+    const move = (e: PointerEvent) => { u.current.tx = e.clientX * scale; u.current.ty = (innerHeight - e.clientY) * scale }
     window.addEventListener('pointermove', move)
     const still = reducedMotion()
     let raf = 0
     const t0 = performance.now()
-    const frame = () => {
+    let last = t0, slow = 0, frames = 0
+    const frame = (now: number) => {
+      raf = requestAnimationFrame(frame)
+      if (document.hidden) return
+      const dt = now - last
+      last = now
+      frames++
+      if (frames > 20 && dt > 24) slow++
+      if (slow > 12 && scale > 0.45) { scale *= 0.8; slow = 0; resize() }
       const s = u.current
       if (s.mx < -9000) { s.mx = s.tx; s.my = s.ty }
       s.mx += (s.tx - s.mx) * 0.08; s.my += (s.ty - s.my) * 0.08
       gl.uniform2f(uRes, el.width, el.height)
-      gl.uniform1f(uTime, still ? 0 : (performance.now() - t0) / 1000)
+      gl.uniform1f(uTime, still ? 0 : (now - t0) / 1000)
       gl.uniform2f(uMouse, s.mx, s.my)
       gl.uniform1f(uLight, s.light); gl.uniform1f(uPulse, s.pulse); gl.uniform1f(uHeat, s.heat)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
-      raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); window.removeEventListener('pointermove', move) }

@@ -24,6 +24,7 @@ function markIntroSeen() {
 export function App() {
   const [route, setRoute] = useState<Route>(readRoute)
   const [intro, setIntro] = useState(introPending)
+  const [revealing, setRevealing] = useState(false)
   useEffect(() => {
     const on = () => {
       setRoute(readRoute())
@@ -36,15 +37,23 @@ export function App() {
   const leavePitch = (to?: string) => {
     markIntroSeen()
     setIntro(false)
+    setRevealing(false)
     if (to) location.hash = to
     else if (route === 'pitch') location.hash = '#/'
   }
 
   return (
     <>
-      {(route === 'pitch' || intro) && <Pitch mode={route === 'pitch' ? 'deck' : 'intro'} onExit={leavePitch} />}
-      <Nav route={route === 'app' ? 'app' : 'home'} />
-      {route === 'app' ? <AppPage /> : <Landing />}
+      {(route === 'pitch' || intro) && (
+        <Pitch mode={route === 'pitch' ? 'deck' : 'intro'} onExit={leavePitch} onExitStart={() => setRevealing(true)} />
+      )}
+      {/* Nothing runs behind the pitch; the site mounts as the exit iris starts opening. */}
+      {(!(route === 'pitch' || intro) || revealing) && (
+        <>
+          <Nav route={route === 'app' ? 'app' : 'home'} />
+          {route === 'app' ? <AppPage /> : <Landing />}
+        </>
+      )}
       <footer className="foot">
         <div className="wrap">
           <span className="mono">Coil · Mezo Buildathon · Track 1 DeFi · <a href="#/pitch">Pitch</a></span>

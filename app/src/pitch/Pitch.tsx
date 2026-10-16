@@ -23,7 +23,7 @@ const EXAMPLE: MarketState = {
  * (draw, click, drag, hold), earns sats, and the visitor moves on by scrolling, swiping,
  * arrow keys or the Next button. mode 'intro' opens onto the landing page; 'deck' is #/pitch.
  */
-export function Pitch({ mode, onExit }: { mode: 'intro' | 'deck'; onExit: (to?: string) => void }) {
+export function Pitch({ mode, onExit, onExitStart }: { mode: 'intro' | 'deck'; onExit: (to?: string) => void; onExitStart?: () => void }) {
   const marketQ = useMarket()
   const m = marketQ.data ?? EXAMPLE
   const radarQ = useRadar(marketQ.data?.price)
@@ -50,9 +50,10 @@ export function Pitch({ mode, onExit }: { mode: 'intro' | 'deck'; onExit: (to?: 
   const exit = useCallback((to?: string) => {
     if (exiting.current) return
     exiting.current = true
+    onExitStart?.()
     if (!root.current || reducedMotion()) return onExit(to)
     gsap.to(root.current, { clipPath: 'circle(0% at 50% 50%)', duration: 1.2, ease: 'expo.inOut', onComplete: () => onExit(to) })
-  }, [onExit])
+  }, [onExit, onExitStart])
 
   /** Leave the current chapter (content drifts out and blurs), then mount the next one. */
   const go = useCallback((n: number) => {
@@ -63,7 +64,7 @@ export function Pitch({ mode, onExit }: { mode: 'intro' | 'deck'; onExit: (to?: 
     const el = layer.current
     const finish = () => { setIdx(n); setTimeout(() => { busy.current = false }, 900) } // let trackpad inertia die out
     if (!el || reducedMotion()) return finish()
-    gsap.to(el, { y: -70 * dir.current, opacity: 0, filter: 'blur(10px)', duration: 0.7, ease: 'power3.in', onComplete: finish })
+    gsap.to(el, { y: -60 * dir.current, opacity: 0, duration: 0.55, ease: 'power3.in', onComplete: finish })
   }, [idx, last])
 
   const next = useCallback(() => (idx < last ? go(idx + 1) : mode === 'intro' ? exit() : undefined), [idx, last, go, mode, exit])
@@ -73,7 +74,7 @@ export function Pitch({ mode, onExit }: { mode: 'intro' | 'deck'; onExit: (to?: 
     const el = layer.current
     if (!el) return
     if (reducedMotion()) { gsap.set(el, { clearProps: 'all' }); return }
-    gsap.fromTo(el, { y: 70 * dir.current, opacity: 0, filter: 'blur(10px)' }, { y: 0, opacity: 1, filter: 'blur(0px)', duration: 1.1, ease: 'expo.out', clearProps: 'filter' })
+    gsap.fromTo(el, { y: 60 * dir.current, opacity: 0 }, { y: 0, opacity: 1, duration: 1, ease: 'expo.out', clearProps: 'transform' })
   }, [idx])
 
   /** A chapter calls this once its interaction is complete (once per chapter). */
@@ -83,6 +84,7 @@ export function Pitch({ mode, onExit }: { mode: 'intro' | 'deck'; onExit: (to?: 
     if (doneRef.current[idx]) return
     doneRef.current[idx] = true
     setDone({ ...doneRef.current })
+    if (reward <= 0) return // passive chapters just unlock the scroll hint
     const from = satsRef.current
     satsRef.current += reward
     setSats(satsRef.current)

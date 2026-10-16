@@ -19,15 +19,18 @@ export function Rings({ layers, children }: { layers: number[]; children?: React
     const ctx = el.getContext('2d')!
     let raf = 0
     let size = 0
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1)
     const css = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim()
     const resize = () => {
       size = el.clientWidth
       el.width = el.height = size * dpr
     }
+    // theme colours are read once a second, not every frame (getComputedStyle forces style work)
+    let colors = { ink: css('--ink'), acc: css('--accent'), rule: css('--rule') }, read = performance.now()
     const draw = () => {
       if (!size) return
-      const ink = css('--ink'), acc = css('--accent'), rule = css('--rule')
+      if (performance.now() - read > 1000) { colors = { ink: css('--ink'), acc: css('--accent'), rule: css('--rule') }; read = performance.now() }
+      const { ink, acc, rule } = colors
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, size, size)
       const c = size / 2
@@ -57,10 +60,14 @@ export function Rings({ layers, children }: { layers: number[]; children?: React
         ctx.fill()
       })
     }
+    let visible = true
+    const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting })
+    io.observe(el)
     const tick = () => {
+      raf = requestAnimationFrame(tick)
+      if (!visible || document.hidden) return
       state.current.forEach((g, i) => (g.rot += 0.0035 * (1 + i * 0.45) * (i % 2 ? -1 : 1)))
       draw()
-      raf = requestAnimationFrame(tick)
     }
     const ro = new ResizeObserver(() => { resize(); draw() })
     ro.observe(el)
@@ -69,7 +76,7 @@ export function Rings({ layers, children }: { layers: number[]; children?: React
       state.current.forEach((g) => { g.w = g.tw; g.rad = g.trad })
       draw()
     } else raf = requestAnimationFrame(tick)
-    return () => { cancelAnimationFrame(raf); ro.disconnect() }
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); io.disconnect() }
   }, [])
 
   return (

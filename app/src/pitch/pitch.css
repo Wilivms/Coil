@@ -7,9 +7,9 @@
   --p-acc: #f7931a; --p-acc-ink: #a35400; --p-red: #ff6a5c; --p-green: #4cc38a;
   font-family: var(--f-body);
 }
-.pitch__shader { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.pitch__shader { position: absolute; inset: 0; width: 100%; height: 100%; display: block; image-rendering: auto; }
 .pitch__stage { position: absolute; inset: 0; }
-.pitch__layer { position: absolute; inset: 0; will-change: transform, opacity, filter; }
+.pitch__layer { position: absolute; inset: 0; }
 .has-cursor .pitch, .has-cursor .pitch * { cursor: none !important; }
 
 .scene {
@@ -38,7 +38,7 @@
 .pitch__top { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 22px); left: var(--gutter); right: var(--gutter); display: flex; justify-content: space-between; align-items: center; z-index: 5; font: 500 11px/1 var(--f-mono); letter-spacing: 0.1em; text-transform: uppercase; pointer-events: none; }
 .pitch__brand { display: flex; gap: 10px; align-items: center; font: 800 16px/1 var(--f-display); letter-spacing: 0.03em; font-variation-settings: 'wdth' 125; text-transform: none; }
 .pitch__brand i { width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--p-acc); display: inline-block; }
-.pitch__sats { display: inline-flex; gap: 8px; align-items: center; padding: 9px 14px; border-radius: 999px; background: rgba(140,140,150,0.14); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.pitch__sats { display: inline-flex; gap: 8px; align-items: center; padding: 9px 14px; border-radius: 999px; background: rgba(140,140,150,0.16); }
 .pitch__sats b { color: var(--p-acc); font-weight: 600; }
 .pitch__sats span { font-size: 13px; letter-spacing: 0; }
 .pitch__rail { position: absolute; right: clamp(16px, 2vw, 28px); top: 50%; transform: translateY(-50%); z-index: 5; display: flex; flex-direction: column; gap: 10px; }
@@ -96,7 +96,7 @@ html:not(.has-cursor) .cursor-ring, html:not(.has-cursor) .cursor-dot { display:
 
 /* ------------------------------------------------------------------ 3 pieces */
 .p-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(14px, 2vw, 28px); perspective: 1200px; }
-.p-card { background: rgba(23,23,26,0.86); backdrop-filter: blur(6px); border: 1px solid var(--p-dark-rule); border-radius: 12px; padding: clamp(16px, 2vw, 24px); display: grid; gap: 12px; min-width: 0; touch-action: none; transition: border-color 0.3s; }
+.p-card { background: rgba(23,23,26,0.94); border: 1px solid var(--p-dark-rule); border-radius: 12px; padding: clamp(16px, 2vw, 24px); display: grid; gap: 12px; min-width: 0; touch-action: none; transition: border-color 0.3s; }
 .p-card.is-plugged { border-color: var(--p-acc); }
 .p-card h3 { margin: 0; font: 700 clamp(20px, 2vw, 26px)/1.05 var(--f-display); font-variation-settings: 'wdth' 106; display: flex; justify-content: space-between; gap: 8px; }
 .p-card p { margin: 0; color: var(--p-ink-2); font-size: 14px; line-height: 1.45; }
@@ -202,3 +202,6 @@ html:not(.has-cursor) .cursor-ring, html:not(.has-cursor) .cursor-dot { display:
 @media (prefers-reduced-motion: reduce) {
   .pitch__scroll i, .p-enter, .p-term .caret { animation: none; }
 }
+
+.is-pulse { animation: ppulse 1.8s ease-in-out infinite; }
+@keyframes ppulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(247,147,26,0.55); } 50% { box-shadow: 0 0 0 12px rgba(247,147,26,0); } }
