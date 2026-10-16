@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAccount, useBalance } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { formatEther, parseEther } from 'viem'
-import { COIL_ROUTER, explorerAddr, MUSD } from '../lib/chain'
+import { COIL_ROUTER, explorerAddr, explorerTx, MUSD } from '../lib/chain'
+import { DEPLOY_TX, useActivity, type ActivityItem } from '../lib/activity'
 import { useBtcHistory, useGuard, useMarket, useRadar, useTrove, redemptionShield, type MarketState } from '../lib/live'
 import {
   amountIn, fromWad, maxLeverage, planClose, planGuard, planOpen, WAD, type OpenPlan,
@@ -109,6 +110,7 @@ export function AppPage() {
               <ReplayPanel closes={hist.data.closes} startDay={hist.data.startDay} stepDays={hist.data.stepDays}
                 leverage={trove ? (position.coll * price) / (position.coll * price - position.debt) : lev} interestBps={m.interestBps} source={hist.data.source} />
             )}
+            <ActivityPanel self={address} />
           </div>
         </div>
       </div>
@@ -607,3 +609,75 @@ function ReplayPanel({ closes, startDay, stepDays, leverage, interestBps, source
   )
 }
 
+
+/* ------------------------------------------------------------------ activity */
+
+const KIND_COPY: Record<ActivityItem['kind'], string> = {
+  Coiled: 'Coil', Unwound: 'Unwind', Delevered: 'Deleverage', GuardArmed: 'Guard armed', GuardDisarmed: 'Guard disarmed', GuardFired: 'Guard fired',
+}
+
+function activityDetail(i: ActivityItem) {
+  const a = i.args as Record<string, bigint>
+  const btc = (v: bigint) => `${fmtBtc(fromWad(v), 4)} BTC`
+  const musd = (v: bigint) => `${fmtNum(fromWad(v))} MUSD`
+  switch (i.kind) {
+    case 'Coiled': return `${btc(a.deposit)} in, ${btc(a.totalColl)} collateral, ${musd(a.debtAmount)} borrowed`
+    case 'Unwound': return `${musd(a.musdRepaid)} repaid, ${btc(a.btcOut)} back`
+    case 'Delevered': return `${musd(a.debtRepaid)} repaid, ${btc(a.btcOut)} back`
+    case 'GuardArmed': return `trigger ${fmtUsd(fromWad(a.triggerPrice))}, repays ${musd(a.debtRepay)}`
+    case 'GuardFired': return `at ${fmtUsd(fromWad(a.price))}, ${btc(a.btcToUser)} to the owner`
+    default: return ''
+  }
+}
+
+function ago(t?: number) {
+  if (!t) return ''
+  const s = Math.max(0, (Date.now() - t) / 1000)
+  if (s < 90) return 'just now'
+  if (s < 5400) return `${Math.round(s / 60)} min ago`
+  if (s < 129600) return `${Math.round(s / 3600)} h ago`
+  return `${Math.round(s / 86400)} d ago`
+}
+
+function ActivityPanel({ self }: { self?: `0x${string}` }) {
+  const q = useActivity()
+  const [mine, setMine] = useState(false)
+  const items = (q.data ?? []).filter((i) => !mine || (self && i.user.toLowerCase() === self.toLowerCase()))
+  return (
+    <section className="panel" id="activity" aria-labelledby="act-h">
+      <div className="panel__h">
+        <h3 id="act-h">On-chain activity</h3>
+        <span className="act__tabs" role="group" aria-label="Filter">
+          <button className={!mine ? 'is-on' : ''} onClick={() => setMine(false)}>All</button>
+          <button className={mine ? 'is-on' : ''} onClick={() => setMine(true)} disabled={!self} title={self ? undefined : 'Connect a wallet'}>Yours</button>
+        </span>
+      </div>
+      <div className="panel__b">
+        {q.isLoading ? (
+          <div className="skeleton" style={{ height: 120 }} />
+        ) : q.isError ? (
+          <p className="note">Could not read CoilRouter events from the Mezo RPC. Retrying every 20 seconds.</p>
+        ) : items.length === 0 ? (
+          <p className="note">{mine ? 'No Coil transactions from this wallet yet.' : 'No Coil transactions yet. Yours will show up here with a link to the explorer.'}</p>
+        ) : (
+          <ol className="act">
+            {items.map((i) => (
+              <li key={i.tx + i.kind}>
+                <span className="act__k" data-k={i.kind}>{KIND_COPY[i.kind]}</span>
+                <span className="act__d">{activityDetail(i)}</span>
+                <span className="act__m mono muted">
+                  {self && i.user.toLowerCase() === self.toLowerCase() ? 'You' : shortAddr(i.user)}{i.time ? ` · ${ago(i.time)}` : ''}
+                </span>
+                <a className="act__tx mono" href={explorerTx(i.tx)} target="_blank" rel="noreferrer">{shortAddr(i.tx)} ↗</a>
+              </li>
+            ))}
+          </ol>
+        )}
+        <p className="act__foot mono muted">
+          {COIL_ROUTER && <a href={explorerAddr(COIL_ROUTER)} target="_blank" rel="noreferrer">CoilRouter {shortAddr(COIL_ROUTER)} ↗</a>}
+          <a href={explorerTx(DEPLOY_TX)} target="_blank" rel="noreferrer">Deploy tx ↗</a>
+        </p>
+      </div>
+    </section>
+  )
+}

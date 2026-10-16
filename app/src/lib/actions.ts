@@ -52,7 +52,7 @@ export function useCoilActions() {
       if (receipt.status !== 'success') throw new Error('Transaction reverted')
       setStep('done')
       toast.push({ kind: 'ok', title: success, tx: hash })
-      await Promise.all(['trove', 'guard', 'market', 'radar'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
+      await Promise.all(['trove', 'guard', 'market', 'radar', 'activity'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
     } catch (e) {
       setStep('idle')
       toast.push({ kind: 'err', title: `${label} failed`, body: explainError(e) })

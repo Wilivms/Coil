@@ -23,6 +23,7 @@ export function Nav({ route }: { route: 'home' | 'app' }) {
             <>
               <li><a href="#/">Overview</a></li>
               <li><a href="#/app" aria-current="page">App</a></li>
+              <li><button className="nav__link" onClick={() => document.getElementById('activity')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Transactions</button></li>
             </>
           )}
         </ul>
