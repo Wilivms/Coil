@@ -12,6 +12,8 @@ Built for the [Mezo Buildathon](https://app.akindo.io/wave-hacks/OVOO0gdrVU8379D
 
 ## Live on Mezo testnet
 
+**App:** https://wilivms.github.io/Coil/ (intro, overview, then `#/app`)
+
 | | |
 |---|---|
 | CoilRouter | [`0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16`](https://explorer.test.mezo.org/address/0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16) |
