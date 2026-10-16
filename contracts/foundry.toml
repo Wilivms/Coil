@@ -1,0 +1,17 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.24"
+# Mezo runs a London-era EVM: no PUSH0, no transient storage.
+evm_version = "london"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+
+[rpc_endpoints]
+mezo_testnet = "https://rpc.test.mezo.org"
+mezo_mainnet = "https://mezo-mainnet.boar.network"
+
+[fmt]
+line_length = 100

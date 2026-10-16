@@ -1,0 +1,7 @@
+{
+  "name": "coil-keeper",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node guard-keeper.mjs" },
+  "dependencies": { "viem": "^2.57.7" }
+}
