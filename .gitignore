@@ -6,3 +6,4 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/
 *.log
+app/tsconfig.tsbuildinfo
