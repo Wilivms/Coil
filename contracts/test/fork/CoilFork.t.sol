@@ -53,6 +53,7 @@ contract CoilForkTest is Test, MezoAddresses {
         }
         net = testnet();
         vm.etch(net.btc, address(new MockBTCPrecompile()).code);
+        vm.allowCheatcodes(net.btc); // the emulator moves native balances with vm.deal
 
         // Oracle at the pool's mid price so ratios are realistic.
         (uint256 r0, uint256 r1,) = IPoolLike(net.pool).getReserves();

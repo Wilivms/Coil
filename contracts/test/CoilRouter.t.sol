@@ -29,6 +29,8 @@ contract CoilRouterTest is Test {
 
     function _deploy(bool musdFirst) internal {
         vm.etch(BTC, address(new MockBTCPrecompile()).code);
+        // On a fork, 0x7b7c…0000 is a live account: the emulator needs explicit cheatcode access.
+        vm.allowCheatcodes(BTC);
         musd = new MockMUSD();
         feed = new MockPriceFeed(PRICE);
         troves = new MockTroves(musd, feed);
