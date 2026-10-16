@@ -26,7 +26,7 @@ export function Cursor() {
       if (verb !== current) {
         current = verb
         if (label.current) label.current.textContent = verb
-        gsap.to(r, { width: verb ? 92 : 34, height: verb ? 92 : 34, backgroundColor: verb ? 'rgba(247,147,26,0.92)' : 'rgba(247,147,26,0)', duration: 0.35, ease: 'power3.out' })
+        gsap.to(r, { width: verb ? 54 : 20, height: verb ? 54 : 20, backgroundColor: verb ? 'rgba(247,147,26,0.12)' : 'rgba(247,147,26,0)', duration: 0.35, ease: 'power3.out' })
         gsap.to(label.current, { opacity: verb ? 1 : 0, duration: 0.25 })
       }
     }

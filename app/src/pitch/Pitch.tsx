@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import gsap from 'gsap'
 import { Observer } from 'gsap/Observer'
-import { SCENES, type DeckData } from './scenes'
+import { SCENES, type DeckData, type Theme } from './scenes'
 import { Shader } from './Shader'
 import { Cursor } from './Cursor'
-import { useMarket, useRadar, type MarketState } from '../lib/live'
+import { useMarket, type MarketState } from '../lib/live'
 import { planOpen, WAD } from '../lib/math'
 import { reducedMotion } from '../lib/motion'
 import { COIL_ROUTER } from '../lib/chain'
-import { fmtNum } from '../lib/format'
 import './pitch.css'
 
 gsap.registerPlugin(Observer)
@@ -19,33 +18,31 @@ const EXAMPLE: MarketState = {
 }
 
 /**
- * The pitch as an interactive journey. Nothing advances on its own: each chapter is played
- * (draw, click, drag, hold), earns sats, and the visitor moves on by scrolling, swiping,
- * arrow keys or the Next button. mode 'intro' opens onto the landing page; 'deck' is #/pitch.
+ * A short, interactive intro: four beats (draw a coil, 25 transactions collapse into one,
+ * Guard catches a crash, enter). Scrolling on a chapter whose moment hasn't played yet plays it,
+ * so nobody skips the effect; the next scroll moves on. mode 'intro' opens onto the landing; 'deck' is #/pitch.
  */
 export function Pitch({ mode, onExit, onExitStart }: { mode: 'intro' | 'deck'; onExit: (to?: string) => void; onExitStart?: () => void }) {
   const marketQ = useMarket()
   const m = marketQ.data ?? EXAMPLE
-  const radarQ = useRadar(marketQ.data?.price)
   const data: DeckData = useMemo(
-    () => ({ m, plan: planOpen(m, WAD, 3), radar: radarQ.data, router: COIL_ROUTER ?? '0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16', live: !!marketQ.data }),
-    [m, radarQ.data, marketQ.data],
+    () => ({ m, plan: planOpen(m, WAD, 3), router: COIL_ROUTER ?? '0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16', live: !!marketQ.data }),
+    [m, marketQ.data],
   )
 
   const [idx, setIdx] = useState(0)
   const [done, setDone] = useState<Record<number, boolean>>({})
-  const [sats, setSats] = useState(0)
-  const [pulse, setPulse] = useState(0)
-  const [heat, setHeat] = useState(0)
+  const [pulse, setPulseN] = useState(0)
+  const [themeOverride, setThemeOverride] = useState<Theme | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const layer = useRef<HTMLDivElement>(null)
-  const satsEl = useRef<HTMLSpanElement>(null)
-  const toast = useRef<HTMLDivElement>(null)
   const busy = useRef(false)
   const dir = useRef(1)
   const exiting = useRef(false)
+  const intercept = useRef<(() => boolean) | null>(null)
   const last = SCENES.length - 1
   const scene = SCENES[idx]
+  const theme = themeOverride ?? scene.theme
 
   const exit = useCallback((to?: string) => {
     if (exiting.current) return
@@ -55,19 +52,25 @@ export function Pitch({ mode, onExit, onExitStart }: { mode: 'intro' | 'deck'; o
     gsap.to(root.current, { clipPath: 'circle(0% at 50% 50%)', duration: 1.2, ease: 'expo.inOut', onComplete: () => onExit(to) })
   }, [onExit, onExitStart])
 
-  /** Leave the current chapter (content drifts out and blurs), then mount the next one. */
   const go = useCallback((n: number) => {
     if (busy.current || n < 0 || n > last || n === idx) return
     busy.current = true
     dir.current = n > idx ? 1 : -1
-    setPulse((p) => p + 1)
+    setPulseN((p) => p + 1)
     const el = layer.current
-    const finish = () => { setIdx(n); setTimeout(() => { busy.current = false }, 900) } // let trackpad inertia die out
+    const finish = () => { intercept.current = null; setThemeOverride(null); setIdx(n); setTimeout(() => { busy.current = false }, 900) }
     if (!el || reducedMotion()) return finish()
     gsap.to(el, { y: -60 * dir.current, opacity: 0, duration: 0.55, ease: 'power3.in', onComplete: finish })
   }, [idx, last])
 
-  const next = useCallback(() => (idx < last ? go(idx + 1) : mode === 'intro' ? exit() : undefined), [idx, last, go, mode, exit])
+  const cooldown = () => { busy.current = true; setTimeout(() => { busy.current = false }, 1400) }
+  const next = useCallback(() => {
+    if (busy.current) return
+    // first scroll on a chapter plays its moment instead of skipping it
+    if (intercept.current?.()) return cooldown()
+    if (idx < last) go(idx + 1)
+    else if (mode === 'intro') exit()
+  }, [idx, last, go, mode, exit])
   const prev = useCallback(() => go(idx - 1), [idx, go])
 
   useLayoutEffect(() => {
@@ -77,31 +80,11 @@ export function Pitch({ mode, onExit, onExitStart }: { mode: 'intro' | 'deck'; o
     gsap.fromTo(el, { y: 60 * dir.current, opacity: 0 }, { y: 0, opacity: 1, duration: 1, ease: 'expo.out', clearProps: 'transform' })
   }, [idx])
 
-  /** A chapter calls this once its interaction is complete (once per chapter). */
-  const doneRef = useRef<Record<number, boolean>>({})
-  const satsRef = useRef(0)
-  const complete = useCallback((reward: number, note?: string) => {
-    if (doneRef.current[idx]) return
-    doneRef.current[idx] = true
-    setDone({ ...doneRef.current })
-    if (reward <= 0) return // passive chapters just unlock the scroll hint
-    const from = satsRef.current
-    satsRef.current += reward
-    setSats(satsRef.current)
-    const o = { v: from }
-    gsap.to(o, { v: satsRef.current, duration: 1.2, ease: 'power3.out', onUpdate: () => { if (satsEl.current) satsEl.current.textContent = fmtNum(Math.round(o.v)) } })
-    if (toast.current) {
-      toast.current.textContent = `+${fmtNum(reward)} sats${note ? ' · ' + note : ''}`
-      gsap.killTweensOf(toast.current)
-      gsap.fromTo(toast.current, { y: 20, opacity: 0, scale: 0.9 }, { y: 0, opacity: 1, scale: 1, duration: 0.6, ease: 'back.out(2)' })
-      gsap.to(toast.current, { opacity: 0, y: -10, duration: 0.6, delay: 2.6 })
-    }
-    setPulse((p) => p + 1)
-  }, [idx])
+  const complete = useCallback(() => { setDone((d) => (d[idx] ? d : { ...d, [idx]: true })) }, [idx])
+  const setIntercept = useCallback((fn: (() => boolean) | null) => { intercept.current = fn }, [])
+  const setPulse = useCallback(() => setPulseN((p) => p + 1), [])
 
-  // Scroll / swipe / keys move between chapters; interactive areas opt out with data-interactive.
   useEffect(() => {
-    // Wheel always navigates; swipes are ignored where a chapter wants the finger (drawing, dragging).
     const wheel = Observer.create({ target: window, type: 'wheel', wheelSpeed: -1, tolerance: 80, preventDefault: true, onUp: () => next(), onDown: () => prev() })
     const touch = Observer.create({
       target: window, type: 'touch', tolerance: 60, ignore: '[data-interactive], [data-interactive] *',
@@ -109,7 +92,7 @@ export function Pitch({ mode, onExit, onExitStart }: { mode: 'intro' | 'deck'; o
     })
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest?.('input, textarea')) return
-      if (['ArrowRight', 'ArrowDown', 'PageDown'].includes(e.key)) { e.preventDefault(); next() }
+      if (['ArrowRight', 'ArrowDown', 'PageDown', ' '].includes(e.key)) { e.preventDefault(); next() }
       else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) { e.preventDefault(); prev() }
       else if (e.key === 'Escape') exit()
     }
@@ -124,39 +107,29 @@ export function Pitch({ mode, onExit, onExitStart }: { mode: 'intro' | 'deck'; o
   }, [])
 
   const Cur = scene.Component
-  const light = scene.theme === 'light' ? 1 : 0
 
   return (
-    <div className="pitch" ref={root} data-theme-now={scene.theme} role="region" aria-roledescription="interactive presentation" aria-label="Coil pitch">
-      <Shader light={light} pulseKey={pulse} heat={heat} />
+    <div className="pitch" ref={root} data-theme-now={theme} role="region" aria-roledescription="interactive presentation" aria-label="Coil intro">
+      <Shader light={scene.theme === 'light' ? 1 : 0} pulseKey={pulse} heat={0} />
       <div className="pitch__stage">
         <div ref={layer} key={idx} className="pitch__layer">
-          <Cur data={data} onDone={complete} setHeat={setHeat} onExit={exit} mode={mode} sats={sats} done={!!done[idx]} />
+          <Cur data={data} onDone={complete} setIntercept={setIntercept} setTheme={setThemeOverride} setPulse={setPulse} onExit={exit} mode={mode} />
         </div>
       </div>
 
       <div className="pitch__top">
         <span className="pitch__brand"><i />COIL</span>
-        <span className="pitch__sats" title="Sats earned on this tour"><b>₿</b><span ref={satsEl}>{fmtNum(sats)}</span> sats</span>
-        <span className="pitch__chap p-mono">{String(idx + 1).padStart(2, '0')} / {String(SCENES.length).padStart(2, '0')}</span>
+        <span className="pitch__dots" aria-label={`Chapter ${idx + 1} of ${SCENES.length}`}>
+          {SCENES.map((s, i) => <i key={s.id} className={(i === idx ? 'is-on' : '') + (i < idx || done[i] ? ' is-done' : '')} />)}
+        </span>
       </div>
-      <nav className="pitch__rail" aria-label="Chapters">
-        {SCENES.map((s, i) => (
-          <button key={s.id} className={'pitch__tick' + (i === idx ? ' is-on' : '') + (done[i] ? ' is-done' : '')} onClick={() => go(i)} aria-label={`${i + 1}. ${s.title}`} aria-current={i === idx ? 'step' : undefined}>
-            <span>{s.title}</span>
-          </button>
-        ))}
-      </nav>
-      <div className="pitch__toast" ref={toast} role="status" aria-live="polite" />
       <div className="pitch__ctrl">
-        <span className="pitch__count p-mono">{scene.title}</span>
+        <span />
         <span className={'pitch__scroll p-mono' + (done[idx] ? ' is-ready' : '')} aria-hidden="true">
-          <i />{done[idx] ? 'Scroll to continue' : scene.hint}
+          <i />{done[idx] ? (idx === last ? 'Scroll to enter' : 'Scroll to continue') : scene.hint}
         </span>
         <span className="pitch__btns">
-          <button className="pbtn" onClick={prev} disabled={idx === 0} aria-label="Previous chapter">←</button>
-          <button className={'pbtn' + (done[idx] ? ' pbtn--solid' : '')} onClick={next} aria-label="Next chapter">{idx === last ? (mode === 'intro' ? 'Enter' : 'End') : 'Next →'}</button>
-          <button className="pbtn pbtn--ghost" onClick={() => exit(mode === 'deck' ? '#/app' : undefined)}>{mode === 'intro' ? 'Skip' : 'Open app'}</button>
+          <button className="pbtn pbtn--ghost" onClick={() => exit(mode === 'deck' ? '#/app' : undefined)}>{mode === 'intro' ? 'Skip intro' : 'Open app'}</button>
         </span>
       </div>
       <Cursor />
