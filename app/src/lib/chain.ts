@@ -26,8 +26,9 @@ export const ADDR = {
   poolFactory: '0x4947243CC818b627A5D06d14C4eCe7398A23Ce1A',
 } as const satisfies Record<string, Address>
 
-const envRouter = (import.meta.env.VITE_COIL_ROUTER ?? '').trim()
-/** CoilRouter address. Empty until you deploy (see contracts/script/Deploy.s.sol). */
+/** CoilRouter on Mezo testnet, deployed 16 Oct 2026 (block 16188308). VITE_COIL_ROUTER overrides it. */
+const DEPLOYED_ROUTER = '0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16'
+const envRouter = (import.meta.env.VITE_COIL_ROUTER ?? '').trim() || DEPLOYED_ROUTER
 export const COIL_ROUTER: Address | null = /^0x[0-9a-fA-F]{40}$/.test(envRouter) ? (envRouter as Address) : null
 
 export const EXPLORER = 'https://explorer.test.mezo.org'

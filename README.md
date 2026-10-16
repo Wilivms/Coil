@@ -10,6 +10,15 @@ Built for the [Mezo Buildathon](https://app.akindo.io/wave-hacks/OVOO0gdrVU8379D
 |---|---|
 | 1 open + 6 loops × (borrow, approve, swap, deposit) = **25 transactions**, 6 pool fees, exposed between steps | **1 signature + 1 transaction**, 1 swap, atomic |
 
+## Live on Mezo testnet
+
+| | |
+|---|---|
+| CoilRouter | [`0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16`](https://explorer.test.mezo.org/address/0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16) |
+| Deploy tx | [`0x724a7b45…0118`](https://explorer.test.mezo.org/tx/0x724a7b45f0fec9fbb97eb427b80ade4e076092db2d2b0e4004794532514c0118) (block 16188308) |
+| Pool used | MUSD/BTC volatile basic pool [`0xd16A…6AA9`](https://explorer.test.mezo.org/address/0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9) |
+| Fork test | `test_fork_coilThenUnwind` passes against the real MUSD contracts and pool |
+
 ## Why it is deep on Mezo
 
 Coil only works because of three Mezo primitives, used together:
@@ -58,11 +67,7 @@ cast wallet import coil-deployer --interactive    # once; your key is stored enc
 forge script script/Deploy.s.sol --rpc-url mezo_testnet --account coil-deployer --broadcast
 ```
 
-Then put the printed address in `app/.env`:
-
-```bash
-cp app/.env.example app/.env   # VITE_COIL_ROUTER=0x...
-```
+The app defaults to the deployed address above; to use your own deployment set `VITE_COIL_ROUTER` in `app/.env` (see `app/.env.example`).
 
 Test BTC: [faucet.test.mezo.org](https://faucet.test.mezo.org/). A trove needs at least 1,800 MUSD of debt, so at 3× deposit about 0.012 BTC or more.
 
@@ -75,7 +80,7 @@ npm run dev        # http://localhost:5173
 npm run build      # static build in app/dist (deploy to Vercel / Netlify)
 ```
 
-Without `VITE_COIL_ROUTER` the app runs in preview mode: every quote, ratio, probability and the radar are computed from live Mezo testnet data, and the trade buttons explain what is missing.
+Before a wallet is connected the app runs as a preview: every quote, ratio, probability and the radar are computed from live Mezo testnet data.
 
 ## Keeper
 
