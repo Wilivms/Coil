@@ -1,13 +1,14 @@
 # AKINDO submission: Coil
 
 - **Product name:** Coil
-- **Tagline:** Leveraged Bitcoin on Mezo in one signature: a flash swap from Mezo's MUSD/BTC pool opens a MUSD trove in your name, and Guard, a pre-signed stop-loss, protects it.
+- **Tagline:** Leveraged Bitcoin on Mezo in one signature, protected by a pre-signed stop-loss.
 - **Product type:** Functional
 - **Live demo:** https://wilivms.github.io/Coil/
 - **Build with:** Mezo, MUSD
 - **Category:** DeFi
 - **Tags:** Solidity, Foundry, EIP-712, React, viem, wagmi
-- **Video:** (to add)
+- **Video:** https://youtu.be/euqwhGGW9JY
+- **Status:** submitted to Wave 1 on 19 Oct 2026. Product page: https://app.akindo.io/communities/kzmodr4eacd1Zpnve/products/WjDlXKe8pUvQkPBZ
 
 ## TL;DR
 Coil opens a leveraged MUSD trove on Mezo in one signature, using a flash swap from Mezo's own MUSD/BTC pool, and protects it with Guard, a pre-signed stop-loss any keeper can execute.
@@ -42,6 +43,7 @@ Solidity 0.8.24, Foundry (unit, fuzz and fork tests against the live MUSD contra
 
 ## Links
 - Live app: https://wilivms.github.io/Coil/
+- Demo video: https://youtu.be/euqwhGGW9JY
 - Code: https://github.com/Wilivms/Coil
 - Deck: https://claude.ai/artifact/JL1ftrsR7CE3GFppdADLHd
 
