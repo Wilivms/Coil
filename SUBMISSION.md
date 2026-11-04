@@ -16,7 +16,7 @@ Wave 1 submission (19 Oct 2026): https://app.akindo.io/communities/kzmodr4eacd1Z
 - **Code:** https://github.com/Wilivms/Coil (commit judged: the latest on `main`; Wave 2 starts at 02f7583)
 - **Deck (PDF in the repo):** https://github.com/Wilivms/Coil/blob/main/docs/Coil-deck.pdf
 - **Video:** [to add, under 2:00]
-- **Contract:** CoilRouter v2 `0xa9adbe2e3ddfbd3795add019c8ea64a950777a92` (verified)
+- **Contracts:** CoilRouter v3 `0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4`, CoilLens `0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353` (both verified); v2 `0xa9ad…7a92` holds the first keeper-fired Guard
 
 ## TL;DR
 
