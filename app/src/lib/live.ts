@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { createPublicClient, http, type Address } from 'viem'
-import { ADDR, COIL_LENS, COIL_ROUTER, mezoTestnet } from './chain'
+import { ADDR, COIL_LENS, COIL_ROUTER, mezoTestnet, ROUTER_V2 } from './chain'
 import {
   borrowerOpsAbi, bosAbi, coilLensAbi, coilRouterAbi, collSurplusAbi, erc20Abi, interestRateManagerAbi, poolAbi, poolFactoryAbi,
   priceFeedAbi, troveManagerAbi,
@@ -122,6 +122,7 @@ export function useGuard(user?: Address) {
 
 export type ReserveState = {
   reserve: bigint // MUSD in the Coil Reserve (sMUSD), yield included
+  legacy: bigint // MUSD still in the v2 router's Reserve, to move over
   wallet: bigint // MUSD in the wallet
   allowance: bigint
   totalReserve: bigint
@@ -133,13 +134,16 @@ export function useReserve(user?: Address) {
     enabled: !!user && !!COIL_ROUTER,
     refetchInterval: 20_000,
     queryFn: async (): Promise<ReserveState> => {
-      const [reserve, wallet, allowance, totalReserve] = await Promise.all([
+      const [reserve, wallet, allowance, totalReserve, legacy] = await Promise.all([
         client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'reserveBalance', args: [user!] }),
         client.readContract({ address: ADDR.musd, abi: erc20Abi, functionName: 'balanceOf', args: [user!] }),
         client.readContract({ address: ADDR.musd, abi: erc20Abi, functionName: 'allowance', args: [user!, COIL_ROUTER!] }),
         client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'totalReserve' }),
+        COIL_ROUTER!.toLowerCase() === ROUTER_V2.toLowerCase()
+          ? Promise.resolve(0n)
+          : client.readContract({ address: ROUTER_V2, abi: coilRouterAbi, functionName: 'reserveBalance', args: [user!] }).catch(() => 0n),
       ])
-      return { reserve, wallet, allowance, totalReserve }
+      return { reserve, wallet, allowance, totalReserve, legacy }
     },
   })
 }

@@ -55,9 +55,9 @@ export function ProofPage() {
         </header>
 
         <div className="kpis" style={{ border: '1px solid var(--rule)', borderRadius: 4, marginBottom: 24 }}>
-          <div className="kpi kpi--accent"><span className="mono">Wallets</span><span className="kpi__v">{q.data?.wallets ?? '…'}</span><span className="kpi__s">that used Coil (v1 + v2)</span></div>
+          <div className="kpi kpi--accent"><span className="mono">Wallets</span><span className="kpi__v">{q.data?.wallets ?? '…'}</span><span className="kpi__s">that used Coil (all versions)</span></div>
           <div className="kpi"><span className="mono">Transactions</span><span className="kpi__v">{q.data?.total ?? '…'}</span><span className="kpi__s">CoilRouter calls</span></div>
-          <div className="kpi"><span className="mono">Keeper fires</span><span className="kpi__v">{q.data?.fires ?? '…'}</span><span className="kpi__s">Guards and Shields executed</span></div>
+          <div className="kpi"><span className="mono">Keeper fires</span><span className="kpi__v">{q.data?.fires ?? '…'}</span><span className="kpi__s">Guards, Shields and Recoils run by the keeper</span></div>
           <div className="kpi"><span className="mono">Wallets in Wave 2</span><span className="kpi__v">{q.data?.walletsV2 ?? '…'}</span><span className="kpi__s">since Nov 4, 2026</span></div>
         </div>
 
@@ -121,7 +121,7 @@ export function ProofPage() {
           </div>
           <div className="panel__b">
             <p className="field__hint" style={{ margin: 0 }}>
-              A GitHub Action polls Mezo every 15 seconds and chains itself run after run. It fires any Guard or Shield whose condition holds; the contract re-checks the condition, so a keeper can only fire what is due. Anyone can run the same script from <code>keeper/</code>.
+              A GitHub Action polls Mezo every 15 seconds and chains itself run after run. It fires any Guard, Shield or Recoil whose condition holds and pushes the gauge incentives; the contract re-checks the condition, so a keeper can only fire what is due. Anyone can run the same script from <code>keeper/</code>.
             </p>
           </div>
         </section>

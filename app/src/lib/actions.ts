@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAccount, useSwitchChain, useWalletClient } from 'wagmi'
 import { zeroAddress, type Address, type Hash } from 'viem'
-import { ADDR, COIL_ROUTER, mezoTestnet } from './chain'
+import { ADDR, COIL_ROUTER, mezoTestnet, ROUTER_V2 } from './chain'
 import { borrowerOpsAbi, bosAbi, coilRouterAbi, erc20Abi, hintHelpersAbi, interestRateManagerAbi, maxCapacityAbi, sortedTrovesAbi, troveManagerAbi } from './abis'
 import { client } from './live'
 import { adjustTroveTypedData, closeTroveTypedData, deadlineIn, openTroveTypedData, refinanceTypedData, repayTypedData } from './signing'
@@ -230,6 +230,15 @@ export function useCoilActions() {
           args: [amount],
         })
       }, 'Reserve funded, earning sMUSD yield'),
+
+    withdrawLegacyReserve: () =>
+      run('Withdraw v2 Reserve', async (user) => {
+        setStep('send')
+        return wallet!.writeContract({
+          account: user, chain: mezoTestnet, address: ROUTER_V2, abi: coilRouterAbi, functionName: 'withdrawReserve',
+          args: [(1n << 256n) - 1n],
+        })
+      }, 'v2 Reserve back in your wallet'),
 
     withdrawReserve: (amount: bigint) =>
       run('Withdraw Reserve', async (user) => {

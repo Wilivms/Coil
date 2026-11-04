@@ -778,6 +778,14 @@ function ShieldPanel({ m, position, live, trigger, reserve, shield, actions }: {
               {actions.busy === 'Withdraw Reserve' ? 'Working…' : 'Withdraw all'}
             </button>
           </div>
+          {!!reserve && reserve.legacy > 0n && (
+            <div className="note">
+              {fmtNum(fromWad(reserve.legacy))} MUSD is still in your Reserve on the previous Coil version.{' '}
+              <button className="mini" disabled={!!actions.busy || !actions.ready} onClick={() => actions.withdrawLegacyReserve()}>
+                {actions.busy === 'Withdraw v2 Reserve' ? 'Working…' : 'Move it to your wallet'}
+              </button>
+            </div>
+          )}
           <span className="field__hint">Only you can withdraw it. The only other thing that can move it is your own signed Shield, and only to repay your own trove.</span>
         </div>
         <div className="field">
