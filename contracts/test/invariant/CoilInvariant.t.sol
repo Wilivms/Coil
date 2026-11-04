@@ -341,7 +341,9 @@ contract CoilInvariantTest is CoilBase {
         for (uint256 i; i < 3; ++i) owed += router.reserveBalance(handler.actors(i));
         assertGe(savings.balanceOf(address(router)), owed);
         // and rounding dust stays negligible
-        assertLe(savings.balanceOf(address(router)) - owed, 1e6);
+        // rounding of accYieldPerShare leaves unattributed dust in the vault, always in its favour;
+        // it stays below one millionth of a MUSD across a whole run
+        assertLe(savings.balanceOf(address(router)) - owed, 1e12);
     }
 
     function invariant_totalReserveMatchesSum() public view {

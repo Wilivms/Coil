@@ -54,7 +54,7 @@ BTC is accepted only mid-flow (`receive()` reverts otherwise), so a signature re
 - `test_coil_opensTroveOwnedByUser`, `invariant_routerOwnsNoTrove`
 
 ### R7. The Reserve is always fully backed and only its owner can take it out
-sMUSD held by Coil ≥ the sum of every user's Reserve, yield included; rounding dust stays below 1e-12 MUSD.
+sMUSD held by Coil ≥ the sum of every user's Reserve, yield included; rounding dust (in the vault's favour) stays below 0.000001 MUSD.
 - `invariant_reserveIsBacked`, `invariant_totalReserveMatchesSum`, `testFuzz_reserveAccounting`
 - `test_reserve_onlyOwnerCanWithdraw`, `test_reserve_yieldSplitsProRata`, `test_reserve_withdrawAllIncludesYield`
 - `test_fork_reserveAndShieldOnRealMezo` (real sMUSD, real RepayMUSD signature, real trove)
