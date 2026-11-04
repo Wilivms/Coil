@@ -1,4 +1,4 @@
-import { defineChain, type Address } from 'viem'
+import { defineChain, getAddress, type Address } from 'viem'
 
 export const mezoTestnet = defineChain({
   id: 31611,
@@ -33,10 +33,11 @@ export const ROUTER_V1 = '0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16' as Address
 export const ROUTER_V1_BLOCK = 16_188_308n
 
 /** CoilRouter v2 (Wave 2), deployed 4 Nov 2026 at block 16558220, source-verified. VITE_COIL_ROUTER overrides it. */
-const DEPLOYED_ROUTER: string = '0xA9adbE2E3DDFBd3795ADD019c8EA64a950777a92'
+const DEPLOYED_ROUTER: string = '0xA9aDbE2e3DDFbD3795Add019c8EA64a950777a92'
 export const ROUTER_V2_BLOCK = 16_558_220n
 const envRouter = (import.meta.env.VITE_COIL_ROUTER ?? '').trim() || DEPLOYED_ROUTER
-export const COIL_ROUTER: Address | null = /^0x[0-9a-fA-F]{40}$/.test(envRouter) ? (envRouter as Address) : null
+// getAddress on the lowercased value: a mistyped checksum can never break the app again
+export const COIL_ROUTER: Address | null = /^0x[0-9a-fA-F]{40}$/.test(envRouter) ? getAddress(envRouter.toLowerCase()) : null
 
 export const EXPLORER = 'https://explorer.test.mezo.org'
 export const explorerTx = (h: string) => `${EXPLORER}/tx/${h}`

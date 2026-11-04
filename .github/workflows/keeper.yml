@@ -30,7 +30,7 @@ jobs:
       - run: npm ci
       - name: One keeper pass
         env:
-          COIL_ROUTER: ${{ vars.COIL_ROUTER || '0xA9adbE2E3DDFBd3795ADD019c8EA64a950777a92' }}
+          COIL_ROUTER: ${{ vars.COIL_ROUTER || '0xA9aDbE2e3DDFbD3795Add019c8EA64a950777a92' }}
           FROM_BLOCK: ${{ vars.COIL_ROUTER_BLOCK || '16558220' }}
           KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
           ONCE: '1'
