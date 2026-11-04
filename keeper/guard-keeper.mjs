@@ -8,7 +8,8 @@
  * Anyone can run this.
  *
  *   COIL_ROUTER=0x... KEEPER_PRIVATE_KEY=0x... npm start
- *   optional: FROM_BLOCK=<router deploy block>  POLL_SECONDS=15  DRY_RUN=1  ONCE=1 (single pass, for CI)
+ *   optional: FROM_BLOCK=<router deploy block>  POLL_SECONDS=15  DRY_RUN=1  ONCE=1 (single pass)
+ *             RUN_FOR_SECONDS=300 (poll for that long, then exit: used by the self-chaining GitHub Action)
  */
 import { createPublicClient, createWalletClient, defineChain, http, parseAbi, formatEther } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
@@ -95,9 +96,18 @@ async function tick() {
 }
 
 console.log(`Coil keeper watching ${ROUTER} on Mezo testnet${ONCE ? ' (single pass)' : ` every ${POLL / 1000}s`}${DRY ? ' (dry run)' : ''}`)
+const RUN_FOR = Number(process.env.RUN_FOR_SECONDS ?? 0) * 1000
 if (ONCE) {
   await tick()
   console.log(`[keeper] ${guards.size} Guards and ${shields.size} Shields armed, ${fired} fired this pass`)
+} else if (RUN_FOR > 0) {
+  const end = Date.now() + RUN_FOR
+  let passes = 0
+  while (Date.now() < end) {
+    try { await tick(); passes++ } catch (e) { console.warn('[keeper] tick failed:', e.shortMessage ?? e.message) }
+    await new Promise((r) => setTimeout(r, POLL))
+  }
+  console.log(`[keeper] ${passes} passes, ${guards.size} Guards and ${shields.size} Shields armed, ${fired} fired`)
 } else {
   for (;;) {
     try { await tick() } catch (e) { console.warn('[keeper] tick failed:', e.shortMessage ?? e.message) }

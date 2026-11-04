@@ -1,13 +1,19 @@
 name: Keeper
 
-# Always-on keeper for Coil Guards and Shields on Mezo testnet. Runs every 5 minutes (GitHub's
-# minimum) and can be started by hand. Every run is public in the Actions tab, and every fire is a
-# CoilRouter transaction on the explorer. Anyone can run the same script; the contract checks
-# every condition itself.
+# Always-on keeper for Coil Guards and Shields on Mezo testnet.
+# Each run polls the chain every 15 s for about 5 minutes, then starts the next run itself
+# (workflow_dispatch is the one event GITHUB_TOKEN may trigger), so the keeper never sleeps.
+# The 5-minute schedule restarts the chain if it ever breaks. Every run is public in the Actions
+# tab and every fire is a CoilRouter transaction on the explorer. Anyone can run the same script;
+# the contract checks every condition itself.
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
 
 concurrency:
   group: keeper
@@ -16,7 +22,7 @@ concurrency:
 jobs:
   keep:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: keeper
@@ -28,10 +34,16 @@ jobs:
           cache: npm
           cache-dependency-path: keeper/package-lock.json
       - run: npm ci
-      - name: One keeper pass
+      - name: Keep for 5 minutes
         env:
           COIL_ROUTER: ${{ vars.COIL_ROUTER || '0xA9aDbE2e3DDFbD3795Add019c8EA64a950777a92' }}
           FROM_BLOCK: ${{ vars.COIL_ROUTER_BLOCK || '16558220' }}
           KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
-          ONCE: '1'
+          RUN_FOR_SECONDS: '290'
+          POLL_SECONDS: '15'
         run: npm start
+      - name: Start the next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run keeper.yml --ref ${{ github.ref_name }} --repo ${{ github.repository }}
