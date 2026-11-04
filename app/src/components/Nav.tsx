@@ -1,7 +1,7 @@
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useMarket } from '../lib/live'
 
-export function Nav({ route }: { route: 'home' | 'app' }) {
+export function Nav({ route, current }: { route: 'home' | 'app'; current?: string }) {
   const market = useMarket()
   const live = market.isSuccess && !market.isError
   return (
@@ -17,13 +17,15 @@ export function Nav({ route }: { route: 'home' | 'app' }) {
               <li><a href="#how">How it works</a></li>
               <li><a href="#guard">Guard</a></li>
               <li><a href="#risk">Risk</a></li>
-              <li><a href="#/pitch">Pitch</a></li>
+              <li><a href="#/proof">Proof</a></li>
+              <li><a href="#/try">Try it</a></li>
             </>
           ) : (
             <>
               <li><a href="#/">Overview</a></li>
-              <li><a href="#/app" aria-current="page">App</a></li>
-              <li><button className="nav__link" onClick={() => document.getElementById('activity')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Transactions</button></li>
+              <li><a href="#/app" aria-current={current === 'app' ? 'page' : undefined}>App</a></li>
+              <li><a href="#/proof" aria-current={current === 'proof' ? 'page' : undefined}>Proof</a></li>
+              <li><a href="#/try" aria-current={current === 'try' ? 'page' : undefined}>Try it</a></li>
             </>
           )}
         </ul>

@@ -467,6 +467,7 @@ tr.sel td { background: var(--accent-soft); }
 /* activity */
 .act { list-style: none; margin: 0; padding: 0; display: grid; }
 .act li { display: grid; grid-template-columns: 112px minmax(0, 1fr) auto; grid-template-areas: 'k d tx' 'k m tx'; gap: 2px 14px; align-items: center; padding: 12px 0; border-top: 1px solid var(--rule); }
+.act--steps li { grid-template-columns: 28px minmax(0, 1fr) auto; }
 .act li:first-child { border-top: 0; padding-top: 0; }
 .act__k { grid-area: k; font: 600 13px/1.2 var(--f-body); }
 .act__k[data-k='Coiled'] { color: var(--accent-ink); }

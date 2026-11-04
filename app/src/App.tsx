@@ -2,11 +2,20 @@ import { useEffect, useState } from 'react'
 import { Nav } from './components/Nav'
 import { Landing } from './pages/Landing'
 import { AppPage } from './pages/AppPage'
+import { ProofPage } from './pages/ProofPage'
+import { TryPage } from './pages/TryPage'
 import { Pitch } from './pitch/Pitch'
 import { reducedMotion } from './lib/motion'
 
-type Route = 'home' | 'app' | 'pitch'
-const readRoute = (): Route => (location.hash.startsWith('#/app') ? 'app' : location.hash.startsWith('#/pitch') ? 'pitch' : 'home')
+type Route = 'home' | 'app' | 'pitch' | 'proof' | 'try'
+const readRoute = (): Route => {
+  const h = location.hash
+  if (h.startsWith('#/app')) return 'app'
+  if (h.startsWith('#/pitch')) return 'pitch'
+  if (h.startsWith('#/proof')) return 'proof'
+  if (h.startsWith('#/try')) return 'try'
+  return 'home'
+}
 
 /**
  * Visitors land straight on the site (Wave 1 review: "let visitors reach the app without the
@@ -49,8 +58,8 @@ export function App() {
       {/* Nothing runs behind the pitch; the site mounts as the exit iris starts opening. */}
       {(!(route === 'pitch' || intro) || revealing) && (
         <>
-          <Nav route={route === 'app' ? 'app' : 'home'} />
-          {route === 'app' ? <AppPage /> : <Landing />}
+          <Nav route={route === 'home' ? 'home' : 'app'} current={route} />
+          {route === 'app' ? <AppPage /> : route === 'proof' ? <ProofPage /> : route === 'try' ? <TryPage /> : <Landing />}
         </>
       )}
       <footer className="foot">

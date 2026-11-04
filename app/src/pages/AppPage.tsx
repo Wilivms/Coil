@@ -700,6 +700,13 @@ function ShieldPanel({ m, position, live, trigger, reserve, shield, actions }: {
             {actions.busy === 'Arm Shield' ? 'Working…' : armed ? 'Re-arm Shield' : 'Arm Shield'}
           </button>
           {armed && <button className="btn btn--ghost" disabled={!!actions.busy} onClick={() => actions.disarmShield()}>Disarm</button>}
+          {live && sp.ok && (
+            <button className="btn btn--ghost" disabled={!!actions.busy || !actions.ready || reserveMusd < needed}
+              onClick={() => actions.armShield(sp.repay, Math.ceil(fromWad(m.price) * 1.002), 0, 1)}
+              title={reserveMusd < needed ? 'Fund the Reserve first' : "Arms a Shield at today's price: the keeper repays from your Reserve within a minute"}>
+              Test it now
+            </button>
+          )}
         </div>
         {!live && <p className="field__hint" style={{ margin: 0 }}>Open the position first; a Shield protects a live trove.</p>}
       </div>
@@ -785,11 +792,12 @@ function ago(t?: number) {
 function ActivityPanel({ self }: { self?: `0x${string}` }) {
   const q = useActivity()
   const [mine, setMine] = useState(false)
-  const items = (q.data ?? []).filter((i) => !mine || (self && i.user.toLowerCase() === self.toLowerCase()))
+  const items = (q.data?.items ?? []).filter((i) => !mine || (self && i.user.toLowerCase() === self.toLowerCase()))
   return (
     <section className="panel" id="activity" aria-labelledby="act-h">
       <div className="panel__h">
         <h3 id="act-h">On-chain activity</h3>
+        {q.data && <span className="mono muted">{q.data.wallets} wallets · {q.data.total} transactions · {q.data.fires} keeper fires</span>}
         <span className="act__tabs" role="group" aria-label="Filter">
           <button className={!mine ? 'is-on' : ''} onClick={() => setMine(false)}>All</button>
           <button className={mine ? 'is-on' : ''} onClick={() => setMine(true)} disabled={!self} title={self ? undefined : 'Connect a wallet'}>Yours</button>
@@ -804,7 +812,7 @@ function ActivityPanel({ self }: { self?: `0x${string}` }) {
           <p className="note">{mine ? 'No Coil transactions from this wallet yet.' : 'No Coil transactions yet. Yours will show up here with a link to the explorer.'}</p>
         ) : (
           <ol className="act">
-            {items.map((i) => (
+            {items.slice(0, 40).map((i) => (
               <li key={i.tx + i.kind}>
                 <span className="act__k" data-k={i.kind}>{KIND_COPY[i.kind]}</span>
                 <span className="act__d">{activityDetail(i)}</span>
