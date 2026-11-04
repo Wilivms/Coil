@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAccount, useBalance } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { formatEther, parseEther } from 'viem'
-import { COIL_ROUTER, explorerAddr, explorerTx, MUSD } from '../lib/chain'
+import { COIL_ROUTER, explorerAddr, explorerTx, MUSD, ROUTER_V1 } from '../lib/chain'
 import { DEPLOY_TX, useActivity, type ActivityItem } from '../lib/activity'
-import { useBtcHistory, useGuard, useMarket, useRadar, useTrove, redemptionShield, type MarketState } from '../lib/live'
 import {
-  amountIn, fromWad, maxLeverage, planClose, planGuard, planOpen, WAD, type OpenPlan,
+  useBtcHistory, useGuard, useMarket, useRadar, useReserve, useShield, useSurplus, useTrove, redemptionShield, type MarketState,
+} from '../lib/live'
+import {
+  amountIn, fromWad, maxLeverage, planClose, planGuard, planOpen, planShield, toWad, WAD, type OpenPlan,
 } from '../lib/math'
 import { historicalTouchRate, realizedVol, touchProbability } from '../lib/risk'
 import { fmtBtc, fmtCompact, fmtNum, fmtPct, fmtUsd, shortAddr } from '../lib/format'
@@ -32,6 +34,9 @@ export function AppPage() {
   const trove = troveQ.data?.exists ? troveQ.data : undefined
   const guardQ = useGuard(trove ? address : undefined)
   const radarQ = useRadar(marketQ.data?.price)
+  const reserveQ = useReserve(address)
+  const shieldQ = useShield(trove ? address : undefined)
+  const surplusQ = useSurplus(address)
   const hist = useBtcHistory()
   const actions = useCoilActions()
 
@@ -73,6 +78,19 @@ export function AppPage() {
         <MarketBar m={m} live={!!marketQ.data} error={marketQ.isError} />
         <div className="app__grid" style={{ marginTop: 24 }}>
           <div className="stack">
+            {!!surplusQ.data && surplusQ.data > 0n && (
+              <section className="panel">
+                <div className="panel__h"><h3>BTC to claim</h3><span className="pill" data-s="watch">Trove closed by MUSD</span></div>
+                <div className="panel__b">
+                  <p className="field__hint" style={{ margin: 0 }}>
+                    A redemption or a Recovery Mode liquidation closed your trove and left {fmtBtc(fromWad(surplusQ.data), 5)} BTC in MUSD's surplus pool. It is yours: claim it in one transaction.
+                  </p>
+                  <button className="btn btn--block" disabled={!!actions.busy || !actions.ready} onClick={() => actions.claimCollateral()}>
+                    {actions.busy === 'Claim BTC' ? 'Working…' : `Claim ${fmtBtc(fromWad(surplusQ.data), 5)} BTC`}
+                  </button>
+                </div>
+              </section>
+            )}
             {trove ? (
               <ManagePanel m={m} trove={{ coll: trove.coll, debt: trove.debt }} actions={actions} />
             ) : (
@@ -105,6 +123,10 @@ export function AppPage() {
             {position && (
               <GuardPanel m={m} position={position} trigger={triggerV} setTrigger={setTrigger} lo={triggerLo} hi={triggerHi}
                 live={!!trove} guard={guardQ.data} actions={actions} />
+            )}
+            {position && (
+              <ShieldPanel m={m} position={position} live={!!trove} trigger={triggerV} reserve={reserveQ.data}
+                shield={shieldQ.data} actions={actions} />
             )}
             {position && hist.data && (
               <ReplayPanel closes={hist.data.closes} startDay={hist.data.startDay} stepDays={hist.data.stepDays}
@@ -510,6 +532,9 @@ function GuardPanel({ m, position, trigger, setTrigger, lo, hi, live, guard, act
   const price = fromWad(m.price)
   const t = { coll: BigInt(Math.round(position.coll * 1e6)) * 10n ** 12n, debt: BigInt(Math.round(position.debt * 1e6)) * 10n ** 12n, status: 1, interestBps: m.interestBps }
   const g = planGuard(m, t, trigger, target, fromWad(m.minNetDebt))
+  // "Test it now": a Guard at today's price fires on the keeper's next pass (every few minutes).
+  const crNow = (position.coll * price) / position.debt
+  const demo = planGuard(m, t, Math.floor(price * 1.002), Math.max(crNow + 0.1, target), fromWad(m.minNetDebt))
   const pct = hi > lo ? ((trigger - lo) / (hi - lo)) * 100 : 0
   const armed = guard?.armed
   return (
@@ -548,13 +573,14 @@ function GuardPanel({ m, position, trigger, setTrigger, lo, hi, live, guard, act
             <div className="row"><span>MUSD repaid (flash)</span><span>{fmtNum(fromWad(g.repay))}</span></div>
             <div className="row"><span>BTC sold, at most</span><span>{fmtBtc(fromWad(g.withdraw), 4)}</span></div>
             <div className="row row--strong"><span>Ratio after</span><span>{fmtPct(g.crAfter, 0)}</span></div>
+            <div className="row"><span>BTC back to you, at least</span><span>{fmtBtc(fromWad(g.minBtcOut), 5)}</span></div>
             <div className="row"><span>Keeper bounty</span><span>0.30% of the BTC released</span></div>
           </div>
         ) : (
           <p className="note">{g.reason}</p>
         )}
         <p className="field__hint" style={{ margin: 0 }}>
-          You sign one exact adjustment now. Coil stores it on-chain with the trigger; once MUSD's price feed is at or below it, any keeper can run it. Any other change to your trove makes the signature stale, so you re-arm after.
+          You sign one exact adjustment now. Coil stores it on-chain with the trigger; once MUSD's price feed is at or below it, any keeper can run it. The swap is bounded by MUSD's own price feed, so nobody can move the pool and sell your BTC cheap. Works on any MUSD trove, opened with Coil or in the Mezo app. Another signed change to your trove makes the signature stale, so you re-arm after.
         </p>
         <StepList step={actions.step} active={actions.busy === 'Arm Guard'} labels={['Sign the deleverage', 'Store it with the trigger', 'Mezo confirms']} />
         <div className="cta-row">
@@ -562,8 +588,120 @@ function GuardPanel({ m, position, trigger, setTrigger, lo, hi, live, guard, act
             {actions.busy === 'Arm Guard' ? 'Working…' : armed ? 'Re-arm Guard' : 'Arm Guard'}
           </button>
           {armed && <button className="btn btn--ghost" disabled={!!actions.busy} onClick={() => actions.disarmGuard()}>Disarm</button>}
+          {live && demo.ok && (
+            <button className="btn btn--ghost" disabled={!!actions.busy || !actions.ready} onClick={() => actions.armGuard(demo, 30, 1)}
+              title="Arms a Guard at today's price: the keeper fires it within minutes, so you can watch it on the explorer">
+              Test it now
+            </button>
+          )}
         </div>
+        {(guard?.recoveryMode || m.recoveryMode) && (
+          <p className="note note--danger">MUSD is in Recovery Mode: collateral can't leave a trove, so a Guard can't fire. A Shield, which only repays debt from your Reserve, still can.</p>
+        )}
         {!live && <p className="field__hint" style={{ margin: 0 }}>Open the position first; a Guard protects a live trove.</p>}
+      </div>
+    </section>
+  )
+}
+
+/* ------------------------------------------------------------------ reserve and shield */
+
+function ShieldPanel({ m, position, live, trigger, reserve, shield, actions }: {
+  m: MarketState
+  position: Position
+  live: boolean
+  trigger: number
+  reserve?: import('../lib/live').ReserveState
+  shield?: import('../lib/live').ShieldState
+  actions: ReturnType<typeof useCoilActions>
+}) {
+  const [amountStr, setAmountStr] = useState('')
+  const [share, setShare] = useState(0.25)
+  const [buffer, setBuffer] = useState(50_000)
+  const [usePrice, setUsePrice] = useState(true)
+  const [days, setDays] = useState(30)
+  const t = { coll: toWad(position.coll), debt: toWad(position.debt), status: 1, interestBps: m.interestBps }
+  const sp = planShield(t, share, trigger, fromWad(m.minNetDebt))
+  const reserveMusd = reserve ? fromWad(reserve.reserve) : 0
+  const walletMusd = reserve ? fromWad(reserve.wallet) : 0
+  const amount = Number((amountStr || '0').replace(',', '.'))
+  const needed = fromWad(sp.repay) + 5
+  const ahead = shield ? fromWad(shield.ahead) : null
+  const armed = shield?.armed
+  return (
+    <section className="panel" aria-labelledby="shield-h">
+      <div className="panel__h">
+        <h3 id="shield-h">Reserve and Shield · redemption protection</h3>
+        {armed ? (
+          <span className="pill" data-s={shield!.fresh ? (shield!.funded ? (shield!.byPrice || shield!.byQueue ? 'danger' : 'ok') : 'watch') : 'watch'}>
+            {!shield!.fresh ? 'Stale, sign again' : !shield!.funded ? 'Armed, Reserve too low' : shield!.byPrice || shield!.byQueue ? 'Triggered, waiting for a keeper' : 'Armed'}
+          </span>
+        ) : (
+          <span className="pill" data-s="idle">Not armed</span>
+        )}
+      </div>
+      <div className="kpis">
+        <div className="kpi kpi--accent"><span className="mono">Reserve</span><span className="kpi__v">{fmtNum(reserveMusd)}</span><span className="kpi__s">MUSD in Mezo's sMUSD, earning its yield</span></div>
+        <div className="kpi"><span className="mono">Redeemable ahead</span><span className="kpi__v">{ahead === null ? '…' : `${fmtCompact(ahead)}${shield?.found ? '' : '+'}`}</span><span className="kpi__s">MUSD redeemed before your trove</span></div>
+        <div className="kpi"><span className="mono">Wallet</span><span className="kpi__v">{fmtNum(walletMusd)}</span><span className="kpi__s">MUSD you can add</span></div>
+      </div>
+      <div className="panel__b">
+        <div className="field">
+          <span className="mono muted">Fund the Reserve</span>
+          <div className="inp-row">
+            <input className="inp" inputMode="decimal" placeholder="MUSD" value={amountStr} onChange={(e) => setAmountStr(e.target.value)} aria-label="MUSD amount" />
+            <button className="mini" onClick={() => setAmountStr(String(Math.floor(walletMusd)))} disabled={!walletMusd}>Max</button>
+            <button className="btn" disabled={!live && !reserve || !(amount > 0) || amount > walletMusd + 1e-9 || !!actions.busy || !actions.ready}
+              onClick={() => actions.depositReserve(toWad(amount))}>
+              {actions.busy === 'Fund Reserve' ? 'Working…' : 'Add'}
+            </button>
+            <button className="btn btn--ghost" disabled={!reserveMusd || !!actions.busy || !actions.ready}
+              onClick={() => actions.withdrawReserve((1n << 256n) - 1n)}>
+              {actions.busy === 'Withdraw Reserve' ? 'Working…' : 'Withdraw all'}
+            </button>
+          </div>
+          <span className="field__hint">Only you can withdraw it. The only other thing that can move it is your own signed Shield, and only to repay your own trove.</span>
+        </div>
+        <div className="field">
+          <span className="mono muted">Shield repays</span>
+          <div className="inp-row">
+            {[0.1, 0.25, 0.5].map((v) => <button key={v} className="mini" aria-pressed={v === share} onClick={() => setShare(v)}>{Math.round(v * 100)}% of debt</button>)}
+          </div>
+        </div>
+        <div className="field">
+          <span className="mono muted">Fires when</span>
+          <div className="inp-row">
+            <button className="mini" aria-pressed={usePrice} onClick={() => setUsePrice(!usePrice)}>BTC ≤ {fmtUsd(trigger)}</button>
+            <span className="faint">or less than</span>
+            {[10_000, 50_000, 250_000].map((v) => <button key={v} className="mini" aria-pressed={v === buffer} onClick={() => setBuffer(v)}>{fmtCompact(v)} MUSD</button>)}
+            <span className="faint">stands ahead in the redemption queue</span>
+          </div>
+          <div className="inp-row">
+            {[7, 30, 90].map((d) => <button key={d} className="mini" aria-pressed={d === days} onClick={() => setDays(d)}>{d}d</button>)}
+          </div>
+        </div>
+        {sp.ok ? (
+          <div className="rows">
+            <div className="row"><span>MUSD repaid from the Reserve</span><span>{fmtNum(fromWad(sp.repay))}</span></div>
+            <div className="row"><span>Ratio after, at the trigger</span><span>{fmtPct(sp.crAfterAtTrigger, 0)}</span></div>
+            <div className="row"><span>Keeper bounty</span><span>5 MUSD from the Reserve</span></div>
+            <div className={`row ${reserveMusd >= needed ? '' : 'row--strong'}`}><span>Reserve needed</span><span>{fmtNum(needed)} MUSD{reserveMusd >= needed ? ' ✓' : ''}</span></div>
+          </div>
+        ) : (
+          <p className="note">{sp.reason}</p>
+        )}
+        <p className="field__hint" style={{ margin: 0 }}>
+          On Mezo the common way to lose a position is a redemption, not a liquidation: redeemers swap MUSD for the BTC of the lowest-ratio troves first, and leveraged troves sit near the front. The Shield watches that queue on-chain. When too little debt stands before you, a keeper repays part of your debt from the Reserve, which moves you back. It only repays, so it also works in Recovery Mode, when collateral can't leave a trove.
+        </p>
+        <StepList step={actions.step} active={actions.busy === 'Arm Shield'} labels={['Sign the repayment', 'Store it with the triggers', 'Mezo confirms']} />
+        <div className="cta-row">
+          <button className="btn" disabled={!live || !sp.ok || !!actions.busy || !actions.ready}
+            onClick={() => actions.armShield(sp.repay, usePrice ? trigger : 0, buffer, days)}>
+            {actions.busy === 'Arm Shield' ? 'Working…' : armed ? 'Re-arm Shield' : 'Arm Shield'}
+          </button>
+          {armed && <button className="btn btn--ghost" disabled={!!actions.busy} onClick={() => actions.disarmShield()}>Disarm</button>}
+        </div>
+        {!live && <p className="field__hint" style={{ margin: 0 }}>Open the position first; a Shield protects a live trove.</p>}
       </div>
     </section>
   )
@@ -614,6 +752,7 @@ function ReplayPanel({ closes, startDay, stepDays, leverage, interestBps, source
 
 const KIND_COPY: Record<ActivityItem['kind'], string> = {
   Coiled: 'Coil', Unwound: 'Unwind', Delevered: 'Deleverage', GuardArmed: 'Guard armed', GuardDisarmed: 'Guard disarmed', GuardFired: 'Guard fired',
+  ReserveDeposited: 'Reserve in', ReserveWithdrawn: 'Reserve out', ShieldArmed: 'Shield armed', ShieldDisarmed: 'Shield disarmed', ShieldFired: 'Shield fired',
 }
 
 function activityDetail(i: ActivityItem) {
@@ -626,6 +765,10 @@ function activityDetail(i: ActivityItem) {
     case 'Delevered': return `${musd(a.debtRepaid)} repaid, ${btc(a.btcOut)} back`
     case 'GuardArmed': return `trigger ${fmtUsd(fromWad(a.triggerPrice))}, repays ${musd(a.debtRepay)}`
     case 'GuardFired': return `at ${fmtUsd(fromWad(a.price))}, ${btc(a.btcToUser)} to the owner`
+    case 'ReserveDeposited': return `${musd(a.amount)} into sMUSD`
+    case 'ReserveWithdrawn': return `${musd(a.amount)} back to the wallet`
+    case 'ShieldArmed': return `repays ${musd(a.repayAmount)}${a.triggerPrice ? ` at ${fmtUsd(fromWad(a.triggerPrice))}` : ''}${a.maxDebtAhead ? `, or under ${fmtCompact(fromWad(a.maxDebtAhead))} MUSD ahead` : ''}`
+    case 'ShieldFired': return `${musd(a.repaid)} repaid from the Reserve, ${(i.args.byRedemptionQueue as boolean) ? 'redemption trigger' : `at ${fmtUsd(fromWad(a.price))}`}`
     default: return ''
   }
 }
@@ -666,7 +809,7 @@ function ActivityPanel({ self }: { self?: `0x${string}` }) {
                 <span className="act__k" data-k={i.kind}>{KIND_COPY[i.kind]}</span>
                 <span className="act__d">{activityDetail(i)}</span>
                 <span className="act__m mono muted">
-                  {self && i.user.toLowerCase() === self.toLowerCase() ? 'You' : shortAddr(i.user)}{i.time ? ` · ${ago(i.time)}` : ''}
+                  {self && i.user.toLowerCase() === self.toLowerCase() ? 'You' : shortAddr(i.user)}{i.time ? ` · ${ago(i.time)}` : ''}{i.router === 'v1' ? ' · v1' : ''}
                 </span>
                 <a className="act__tx mono" href={explorerTx(i.tx)} target="_blank" rel="noreferrer">{shortAddr(i.tx)} ↗</a>
               </li>
@@ -674,8 +817,9 @@ function ActivityPanel({ self }: { self?: `0x${string}` }) {
           </ol>
         )}
         <p className="act__foot mono muted">
-          {COIL_ROUTER && <a href={explorerAddr(COIL_ROUTER)} target="_blank" rel="noreferrer">CoilRouter {shortAddr(COIL_ROUTER)} ↗</a>}
-          <a href={explorerTx(DEPLOY_TX)} target="_blank" rel="noreferrer">Deploy tx ↗</a>
+          {COIL_ROUTER && <a href={explorerAddr(COIL_ROUTER)} target="_blank" rel="noreferrer">CoilRouter v2 {shortAddr(COIL_ROUTER)} ↗</a>}
+          <a href={explorerAddr(ROUTER_V1)} target="_blank" rel="noreferrer">v1 {shortAddr(ROUTER_V1)} ↗</a>
+          <a href={explorerTx(DEPLOY_TX)} target="_blank" rel="noreferrer">v1 deploy tx ↗</a>
         </p>
       </div>
     </section>

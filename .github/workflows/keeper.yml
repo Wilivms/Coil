@@ -1,0 +1,38 @@
+name: Keeper
+
+# Always-on keeper for Coil Guards and Shields on Mezo testnet. Runs every 5 minutes (GitHub's
+# minimum) and can be started by hand. Every run is public in the Actions tab, and every fire is a
+# CoilRouter transaction on the explorer. Anyone can run the same script; the contract checks
+# every condition itself.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: keeper
+  cancel-in-progress: false
+
+jobs:
+  keep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    if: ${{ vars.COIL_ROUTER != '' }}
+    defaults:
+      run:
+        working-directory: keeper
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: keeper/package-lock.json
+      - run: npm ci
+      - name: One keeper pass
+        env:
+          COIL_ROUTER: ${{ vars.COIL_ROUTER }}
+          FROM_BLOCK: ${{ vars.COIL_ROUTER_BLOCK }}
+          KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
+          ONCE: '1'
+        run: npm start

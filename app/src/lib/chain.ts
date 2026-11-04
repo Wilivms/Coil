@@ -24,10 +24,17 @@ export const ADDR = {
   btc: '0x7b7C000000000000000000000000000000000000',
   pool: '0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9', // MUSD/BTC volatile, token0 = MUSD
   poolFactory: '0x4947243CC818b627A5D06d14C4eCe7398A23Ce1A',
+  savings: '0x6f461c68B2c5492C0F5CCEc5a264d692aA7A8e16', // MUSDSavingsRate (sMUSD)
+  collSurplusPool: '0xB4C35747c26E4aB5F1a7CdC7E875B5946eFa6fa9',
 } as const satisfies Record<string, Address>
 
-/** CoilRouter on Mezo testnet, deployed 16 Oct 2026 (block 16188308). VITE_COIL_ROUTER overrides it. */
-const DEPLOYED_ROUTER = '0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16'
+/** CoilRouter v1 (Wave 1), deployed 16 Oct 2026 at block 16188308. Kept for its on-chain history. */
+export const ROUTER_V1 = '0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16' as Address
+export const ROUTER_V1_BLOCK = 16_188_308n
+
+/** CoilRouter v2 (Wave 2). VITE_COIL_ROUTER overrides it. */
+const DEPLOYED_ROUTER: string = 'PENDING_V2'
+export const ROUTER_V2_BLOCK = 0n
 const envRouter = (import.meta.env.VITE_COIL_ROUTER ?? '').trim() || DEPLOYED_ROUTER
 export const COIL_ROUTER: Address | null = /^0x[0-9a-fA-F]{40}$/.test(envRouter) ? (envRouter as Address) : null
 

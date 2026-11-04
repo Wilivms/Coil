@@ -1,68 +1,79 @@
 import { useQuery } from '@tanstack/react-query'
-import { parseAbi, type Address, type Hash } from 'viem'
-import { COIL_ROUTER } from './chain'
+import type { Abi, Address, Hash } from 'viem'
+import { COIL_ROUTER, ROUTER_V1, ROUTER_V1_BLOCK, ROUTER_V2_BLOCK } from './chain'
+import { routerEventsV1, routerEventsV2 } from './abis'
 import { client } from './live'
 
-/** CoilRouter deployment on Mezo testnet (block 16188308). */
-export const DEPLOY_BLOCK = 16_188_308n
+/** v1 deployment transaction (Wave 1), still linked from the activity panel. */
 export const DEPLOY_TX = '0x724a7b45f0fec9fbb97eb427b80ade4e076092db2d2b0e4004794532514c0118' as Hash
 
-const events = parseAbi([
-  'event Coiled(address indexed user, uint256 deposit, uint256 totalColl, uint256 debtAmount, uint256 flashBtc, uint256 musdPaidToPool, uint256 musdRefund)',
-  'event Unwound(address indexed user, uint256 musdRepaid, uint256 btcOut)',
-  'event Delevered(address indexed user, uint256 collWithdrawn, uint256 debtRepaid, uint256 btcOut)',
-  'event GuardArmed(address indexed user, uint256 triggerPrice, uint256 collWithdrawal, uint256 debtRepay, uint256 bountyBps, uint256 deadline)',
-  'event GuardDisarmed(address indexed user)',
-  'event GuardFired(address indexed user, address indexed keeper, uint256 price, uint256 btcToUser, uint256 bounty)',
-])
+export type ActivityKind =
+  | 'Coiled' | 'Unwound' | 'Delevered' | 'GuardArmed' | 'GuardDisarmed' | 'GuardFired'
+  | 'ReserveDeposited' | 'ReserveWithdrawn' | 'ShieldArmed' | 'ShieldDisarmed' | 'ShieldFired'
 
-export type ActivityKind = 'Coiled' | 'Unwound' | 'Delevered' | 'GuardArmed' | 'GuardDisarmed' | 'GuardFired'
 export type ActivityItem = {
   kind: ActivityKind
   user: Address
   tx: Hash
   block: bigint
+  router: 'v1' | 'v2'
   time?: number
-  args: Record<string, bigint | Address>
+  args: Record<string, bigint | Address | boolean>
 }
 
 const CHUNK = 50_000n
 
-async function logsBetween(from: bigint, to: bigint) {
+async function logsBetween(address: Address, events: Abi, from: bigint, to: bigint) {
+  const get = (a: bigint, b: bigint) =>
+    client.getLogs({ address, events: events as typeof routerEventsV2, fromBlock: a, toBlock: b })
   try {
-    return await client.getLogs({ address: COIL_ROUTER!, events, fromBlock: from, toBlock: to })
+    return await get(from, to)
   } catch (e) {
     if (to - from <= CHUNK) throw e
     // the RPC caps the range: split it
     const ranges: [bigint, bigint][] = []
     for (let a = from; a <= to; a += CHUNK) ranges.push([a, a + CHUNK - 1n > to ? to : a + CHUNK - 1n])
-    const parts = await Promise.all(ranges.map(([a, b]) => client.getLogs({ address: COIL_ROUTER!, events, fromBlock: a, toBlock: b })))
-    return parts.flat()
+    return (await Promise.all(ranges.map(([a, b]) => get(a, b)))).flat()
   }
 }
 
 export async function fetchActivity(): Promise<ActivityItem[]> {
-  if (!COIL_ROUTER) return []
   const head = await client.getBlockNumber()
-  const logs = await logsBetween(DEPLOY_BLOCK, head)
-  const items: ActivityItem[] = logs
-    .filter((l) => l.eventName && l.transactionHash && l.blockNumber !== null)
-    .map((l) => ({
+  const sources: { address: Address; events: Abi; from: bigint; router: 'v1' | 'v2' }[] = [
+    { address: ROUTER_V1, events: routerEventsV1, from: ROUTER_V1_BLOCK, router: 'v1' },
+  ]
+  if (COIL_ROUTER && COIL_ROUTER.toLowerCase() !== ROUTER_V1.toLowerCase()) {
+    sources.unshift({ address: COIL_ROUTER, events: routerEventsV2, from: ROUTER_V2_BLOCK || ROUTER_V1_BLOCK, router: 'v2' })
+  }
+  const all = await Promise.all(
+    sources.map(async (s) =>
+      (await logsBetween(s.address, s.events, s.from, head)).map((l) => ({ l, router: s.router })),
+    ),
+  )
+  const items: ActivityItem[] = all
+    .flat()
+    .filter(({ l }) => l.eventName && l.transactionHash && l.blockNumber !== null)
+    .map(({ l, router }) => ({
       kind: l.eventName as ActivityKind,
       user: (l.args as { user: Address }).user,
       tx: l.transactionHash!,
       block: l.blockNumber!,
-      args: l.args as Record<string, bigint | Address>,
+      router,
+      args: l.args as Record<string, bigint | Address | boolean>,
     }))
     .sort((a, b) => (a.block === b.block ? 0 : a.block > b.block ? -1 : 1))
-    .slice(0, 40)
+    .slice(0, 60)
   const blocks = [...new Set(items.map((i) => i.block))]
-  const stamps = await Promise.all(blocks.map((b) => client.getBlock({ blockNumber: b }).then((x) => [b, Number(x.timestamp) * 1000] as const).catch(() => [b, undefined] as const)))
+  const stamps = await Promise.all(
+    blocks.map((b) =>
+      client.getBlock({ blockNumber: b }).then((x) => [b, Number(x.timestamp) * 1000] as const).catch(() => [b, undefined] as const),
+    ),
+  )
   const at = new Map(stamps)
   return items.map((i) => ({ ...i, time: at.get(i.block) }))
 }
 
-/** Every CoilRouter event since deployment, newest first, with explorer-ready tx hashes. */
+/** Every CoilRouter event (v2 and v1), newest first, with explorer-ready tx hashes. */
 export function useActivity() {
   return useQuery({ queryKey: ['activity'], queryFn: fetchActivity, refetchInterval: 20_000, retry: 1 })
 }

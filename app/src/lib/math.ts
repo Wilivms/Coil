@@ -115,6 +115,7 @@ export type GuardPlan = {
   trigger: number
   repay: bigint
   withdraw: bigint
+  minBtcOut: bigint // the contract refuses to fire if less BTC comes out (on top of its PriceFeed bound)
   crAtTrigger: number
   crAfter: number
   debtAfter: number
@@ -134,7 +135,7 @@ export function planGuard(m: Market, t: Trove, trigger: number, targetCr = 1.6, 
   const k = (1 + fee) * 1.03 // BTC per MUSD at trigger, with margin
   const crAtTrigger = (C * trigger) / D
   const R = (targetCr * D - C * trigger) / (targetCr - k)
-  const base = { trigger, crAtTrigger, repay: 0n, withdraw: 0n, crAfter: crAtTrigger, debtAfter: D }
+  const base = { trigger, crAtTrigger, repay: 0n, withdraw: 0n, minBtcOut: 0n, crAfter: crAtTrigger, debtAfter: D }
   if (!(trigger > 0)) return { ...base, ok: false, reason: 'Pick a trigger price' }
   if (R <= 0) return { ...base, ok: false, reason: `Your ratio is still above ${Math.round(targetCr * 100)}% at that price` }
   const maxRepay = D - (minNetDebt + 200)
@@ -143,10 +144,36 @@ export function planGuard(m: Market, t: Trove, trigger: number, targetCr = 1.6, 
   const withdraw = (repay / trigger) * k
   const crAfter = ((C - withdraw) * trigger) / (D - repay)
   if (crAtTrigger < MCR) return { ...base, ok: false, reason: 'That trigger is below your liquidation price' }
+  // BTC expected back: what the withdrawal leaves after buying `repay` MUSD at the trigger price.
+  // Ask for at least half of it, never zero: the PriceFeed bound in the contract is the main protection.
+  const expectedBack = withdraw - (repay / trigger) * (1 + fee)
+  const minBtcOut = toWad(Math.max(expectedBack * 0.5, 1e-8))
   return {
     trigger, crAtTrigger, crAfter, debtAfter: D - repay, ok: true,
-    repay: toWad(repay), withdraw: toWad(withdraw),
+    repay: toWad(repay), withdraw: toWad(withdraw), minBtcOut,
   }
+}
+
+export type ShieldPlan = {
+  repay: bigint
+  crAfterAtTrigger: number
+  debtAfter: number
+  ok: boolean
+  reason?: string
+}
+
+/**
+ * Size a Shield: repay `share` of the debt from the Reserve, never below MUSD's minimum debt.
+ * Repaying raises the ratio, which both pushes liquidation away and moves the trove back in the
+ * redemption queue (redemptions take the lowest nominal ratios first).
+ */
+export function planShield(t: Trove, share: number, trigger: number, minNetDebt = 1800): ShieldPlan {
+  const C = fromWad(t.coll)
+  const D = fromWad(t.debt)
+  const maxRepay = D - (minNetDebt + 200)
+  const repay = Math.min(D * share, maxRepay)
+  if (repay <= 0) return { repay: 0n, crAfterAtTrigger: (C * trigger) / D, debtAfter: D, ok: false, reason: 'Debt is already at the 1,800 MUSD minimum' }
+  return { repay: toWad(Math.floor(repay)), crAfterAtTrigger: (C * trigger) / (D - repay), debtAfter: D - repay, ok: true }
 }
 
 /** Value of the position in BTC terms if closed at oracle price `p` (ignores pool impact). */

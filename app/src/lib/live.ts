@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { createPublicClient, http, type Address } from 'viem'
 import { ADDR, COIL_ROUTER, mezoTestnet } from './chain'
 import {
-  borrowerOpsAbi, bosAbi, coilRouterAbi, interestRateManagerAbi, poolAbi, poolFactoryAbi, priceFeedAbi,
-  troveManagerAbi,
+  borrowerOpsAbi, bosAbi, coilRouterAbi, collSurplusAbi, erc20Abi, interestRateManagerAbi, poolAbi, poolFactoryAbi,
+  priceFeedAbi, troveManagerAbi,
 } from './abis'
 import { GAS_COMP, type Market, type Trove } from './math'
 import { BTC_WEEKLY, BTC_WEEKLY_STEP } from '../data/btcWeekly'
@@ -64,10 +64,12 @@ export async function fetchTrove(user: Address): Promise<TroveState> {
     client.readContract({ address: ADDR.troveManager, abi: troveManagerAbi, functionName: 'getTroveInterestRate', args: [user] }),
     client.readContract({ address: ADDR.borrowerOpsSignatures, abi: bosAbi, functionName: 'getNonce', args: [user] }),
   ])
-  const [coll, principal, interest, pendingColl, pendingPrincipal, pendingInterest] = dc
+  // MUSD's getEntireDebtAndColl already folds pending redistributions into coll, principal and
+  // interest (the pending fields are reported for information only): adding them again double counts.
+  const [coll, principal, interest] = dc
   return {
-    coll: coll + pendingColl,
-    debt: principal + interest + pendingPrincipal + pendingInterest,
+    coll,
+    debt: principal + interest,
     status: Number(status),
     interestBps: Number(rate),
     nonce,
@@ -88,9 +90,11 @@ export type GuardState = {
   armed: boolean
   fresh: boolean
   triggered: boolean
+  recoveryMode: boolean
   triggerPrice: bigint
   collWithdrawal: bigint
   debtRepay: bigint
+  minBtcOut: bigint
   deadline: bigint
   bountyBps: number
 }
@@ -106,10 +110,86 @@ export function useGuard(user?: Address) {
         client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'guardStatus', args: [user!] }),
       ])
       return {
-        armed: s[0], fresh: s[1], triggered: s[2], triggerPrice: g.triggerPrice, collWithdrawal: g.collWithdrawal,
-        debtRepay: g.debtRepay, deadline: g.deadline, bountyBps: g.bountyBps,
+        armed: s[0], fresh: s[1], triggered: s[2], recoveryMode: s[3], triggerPrice: g.triggerPrice,
+        collWithdrawal: g.collWithdrawal, debtRepay: g.debtRepay, minBtcOut: g.minBtcOut, deadline: g.deadline,
+        bountyBps: g.bountyBps,
       }
     },
+  })
+}
+
+/* ------------------------------------------------------------------ reserve and shield */
+
+export type ReserveState = {
+  reserve: bigint // MUSD in the Coil Reserve (sMUSD), yield included
+  wallet: bigint // MUSD in the wallet
+  allowance: bigint
+  totalReserve: bigint
+}
+
+export function useReserve(user?: Address) {
+  return useQuery({
+    queryKey: ['reserve', user],
+    enabled: !!user && !!COIL_ROUTER,
+    refetchInterval: 20_000,
+    queryFn: async (): Promise<ReserveState> => {
+      const [reserve, wallet, allowance, totalReserve] = await Promise.all([
+        client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'reserveBalance', args: [user!] }),
+        client.readContract({ address: ADDR.musd, abi: erc20Abi, functionName: 'balanceOf', args: [user!] }),
+        client.readContract({ address: ADDR.musd, abi: erc20Abi, functionName: 'allowance', args: [user!, COIL_ROUTER!] }),
+        client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'totalReserve' }),
+      ])
+      return { reserve, wallet, allowance, totalReserve }
+    },
+  })
+}
+
+export type ShieldState = {
+  armed: boolean
+  fresh: boolean
+  funded: boolean
+  byPrice: boolean
+  byQueue: boolean
+  ahead: bigint // redeemable MUSD ahead of the trove in the queue
+  found: boolean
+  repayAmount: bigint
+  triggerPrice: bigint
+  maxDebtAhead: bigint
+  bountyMusd: bigint
+  deadline: bigint
+}
+
+/** How far the keeper and the app walk the redemption queue (the contract caps it at 200). */
+export const QUEUE_STEPS = 200n
+
+export function useShield(user?: Address) {
+  return useQuery({
+    queryKey: ['shield', user],
+    enabled: !!user && !!COIL_ROUTER,
+    refetchInterval: 30_000,
+    queryFn: async (): Promise<ShieldState> => {
+      const [sh, st, da] = await Promise.all([
+        client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'shieldOf', args: [user!] }),
+        client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'shieldStatus', args: [user!, QUEUE_STEPS] }),
+        client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'debtAhead', args: [user!, QUEUE_STEPS] }),
+      ])
+      return {
+        armed: st[0], fresh: st[1], funded: st[2], byPrice: st[3], byQueue: st[4], ahead: da[0], found: da[1],
+        repayAmount: sh.repayAmount, triggerPrice: sh.triggerPrice, maxDebtAhead: sh.maxDebtAhead,
+        bountyMusd: sh.bountyMusd, deadline: sh.deadline,
+      }
+    },
+  })
+}
+
+/** BTC left in MUSD's CollSurplusPool after a redemption or a Recovery Mode liquidation closed the trove. */
+export function useSurplus(user?: Address) {
+  return useQuery({
+    queryKey: ['surplus', user],
+    enabled: !!user,
+    refetchInterval: 60_000,
+    queryFn: () =>
+      client.readContract({ address: ADDR.collSurplusPool, abi: collSurplusAbi, functionName: 'getCollateral', args: [user!] }),
   })
 }
 
@@ -138,8 +218,8 @@ export async function fetchRadar(price: bigint): Promise<Radar> {
   const p = Number(price) / 1e18
   const troves = rows
     .map((r, i) => {
-      const coll = Number(r[0] + r[3]) / 1e18
-      const debt = Number(r[1] + r[2] + r[4] + r[5]) / 1e18
+      const coll = Number(r[0]) / 1e18 // pending already included
+      const debt = Number(r[1] + r[2]) / 1e18
       return { owner: owners[i], coll, debt, cr: debt > 0 ? (coll * p) / debt : Infinity }
     })
     .filter((t) => t.debt > 0)

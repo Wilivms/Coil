@@ -3,10 +3,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAccount, useSwitchChain, useWalletClient } from 'wagmi'
 import { zeroAddress, type Address, type Hash } from 'viem'
 import { ADDR, COIL_ROUTER, mezoTestnet } from './chain'
-import { bosAbi, coilRouterAbi, hintHelpersAbi, sortedTrovesAbi } from './abis'
+import { borrowerOpsAbi, bosAbi, coilRouterAbi, erc20Abi, hintHelpersAbi, sortedTrovesAbi } from './abis'
 import { client } from './live'
-import { adjustTroveTypedData, closeTroveTypedData, deadlineIn, openTroveTypedData } from './signing'
+import { adjustTroveTypedData, closeTroveTypedData, deadlineIn, openTroveTypedData, repayTypedData } from './signing'
 import type { GuardPlan, OpenPlan } from './math'
+import { toWad } from './math'
 import { explainError, useToast } from '../components/Toasts'
 
 export type Step = 'idle' | 'sign' | 'send' | 'confirm' | 'done'
@@ -52,7 +53,7 @@ export function useCoilActions() {
       if (receipt.status !== 'success') throw new Error('Transaction reverted')
       setStep('done')
       toast.push({ kind: 'ok', title: success, tx: hash })
-      await Promise.all(['trove', 'guard', 'market', 'radar', 'activity'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
+      await Promise.all(['trove', 'guard', 'market', 'radar', 'activity', 'reserve', 'shield', 'surplus'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
     } catch (e) {
       setStep('idle')
       toast.push({ kind: 'err', title: `${label} failed`, body: explainError(e) })
@@ -143,9 +144,69 @@ export function useCoilActions() {
         const trigger = BigInt(Math.round(g.trigger)) * 10n ** 18n
         return wallet!.writeContract({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'armGuard',
-          args: [trigger, g.withdraw, g.repay, bountyBps, deadline, signature],
+          args: [trigger, g.withdraw, g.repay, g.minBtcOut, bountyBps, deadline, signature],
         })
       }, 'Guard armed'),
+
+    depositReserve: (amount: bigint) =>
+      run('Fund Reserve', async (user) => {
+        const allowance = await client.readContract({
+          address: ADDR.musd, abi: erc20Abi, functionName: 'allowance', args: [user, COIL_ROUTER!],
+        })
+        if (allowance < amount) {
+          setStep('sign')
+          const h = await wallet!.writeContract({
+            account: user, chain: mezoTestnet, address: ADDR.musd, abi: erc20Abi, functionName: 'approve',
+            args: [COIL_ROUTER!, amount],
+          })
+          await client.waitForTransactionReceipt({ hash: h })
+        }
+        setStep('send')
+        return wallet!.writeContract({
+          account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'depositReserve',
+          args: [amount],
+        })
+      }, 'Reserve funded, earning sMUSD yield'),
+
+    withdrawReserve: (amount: bigint) =>
+      run('Withdraw Reserve', async (user) => {
+        setStep('send')
+        return wallet!.writeContract({
+          account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'withdrawReserve',
+          args: [amount],
+        })
+      }, 'MUSD back in your wallet'),
+
+    armShield: (repay: bigint, triggerUsd: number, maxDebtAheadMusd: number, days: number) =>
+      run('Arm Shield', async (user) => {
+        setStep('sign')
+        const nonce = await nonceOf(user)
+        const deadline = deadlineIn(days * 86_400)
+        const signature = await wallet!.signTypedData({
+          account: user, ...repayTypedData({ amount: repay, borrower: user, nonce, deadline }),
+        })
+        setStep('send')
+        return wallet!.writeContract({
+          account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'armShield',
+          args: [repay, triggerUsd > 0 ? toWad(Math.round(triggerUsd)) : 0n, toWad(maxDebtAheadMusd), toWad(5), deadline, signature],
+        })
+      }, 'Shield armed'),
+
+    disarmShield: () =>
+      run('Disarm Shield', async (user) => {
+        setStep('send')
+        return wallet!.writeContract({
+          account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'disarmShield',
+        })
+      }, 'Shield disarmed'),
+
+    claimCollateral: () =>
+      run('Claim BTC', async (user) => {
+        setStep('send')
+        return wallet!.writeContract({
+          account: user, chain: mezoTestnet, address: ADDR.borrowerOps, abi: borrowerOpsAbi, functionName: 'claimCollateral',
+        })
+      }, 'Leftover BTC claimed'),
 
     disarmGuard: () =>
       run('Disarm Guard', async (user) => {

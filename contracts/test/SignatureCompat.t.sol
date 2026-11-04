@@ -53,4 +53,12 @@ contract SignatureCompatTest is Test {
             _digest(th, abi.encode(U, R), 6), 0xd8efd638ff917b68922334a5fdf51f790d59a41a4509297c363f8f0e59105b29
         );
     }
+
+    /// Shield signs a RepayMUSD (app/src/lib/signing.ts repayTypedData).
+    function test_repayDigestMatchesViem() public pure {
+        bytes32 th = keccak256("RepayMUSD(uint256 amount,address borrower,uint256 nonce,uint256 deadline)");
+        assertEq(
+            _digest(th, abi.encode(uint256(1234e18), U), 7), 0xc3449dc4b7dc83605e95db3c343a8ad324a0a7780d5e51f122d89ca162c3ccb0
+        );
+    }
 }
