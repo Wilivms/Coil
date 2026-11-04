@@ -8,14 +8,13 @@ import { reducedMotion } from './lib/motion'
 type Route = 'home' | 'app' | 'pitch'
 const readRoute = (): Route => (location.hash.startsWith('#/app') ? 'app' : location.hash.startsWith('#/pitch') ? 'pitch' : 'home')
 
-/** The pitch plays once per browser session as the site's intro; #/pitch replays it as a deck. */
+/**
+ * Visitors land straight on the site (Wave 1 review: "let visitors reach the app without the
+ * drawing intro"). The animated pitch is opt-in at #/pitch, or with #/?intro.
+ */
 function introPending() {
   if (reducedMotion() || readRoute() !== 'home') return false
-  try {
-    return !sessionStorage.getItem('coil-intro-seen')
-  } catch {
-    return true
-  }
+  return location.hash.includes('intro')
 }
 function markIntroSeen() {
   try { sessionStorage.setItem('coil-intro-seen', '1') } catch { /* storage blocked */ }
