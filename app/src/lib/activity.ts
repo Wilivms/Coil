@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { decodeEventLog, type Abi, type Address, type Hash, type Hex } from 'viem'
-import { COIL_ROUTER, ROUTER_V1, ROUTER_V1_BLOCK, ROUTER_V2_BLOCK } from './chain'
-import { routerEventsV1, routerEventsV2 } from './abis'
+import { COIL_ROUTER, ROUTER_V1, ROUTER_V1_BLOCK, ROUTER_V2, ROUTER_V2_BLOCK, ROUTER_V3_BLOCK } from './chain'
+import { routerEventsV1, routerEventsV2, routerEventsV3 } from './abis'
 import { client } from './live'
 
 /** v1 deployment transaction (Wave 1), still linked from the activity panel. */
@@ -13,6 +13,7 @@ const BLOCKSCOUT = 'https://api.explorer.test.mezo.org/api/v2'
 export type ActivityKind =
   | 'Coiled' | 'Unwound' | 'Delevered' | 'GuardArmed' | 'GuardDisarmed' | 'GuardFired'
   | 'ReserveDeposited' | 'ReserveWithdrawn' | 'ShieldArmed' | 'ShieldDisarmed' | 'ShieldFired'
+  | 'Relevered' | 'RecoilArmed' | 'RecoilDisarmed' | 'RecoilFired' | 'IncentivesAccrued' | 'IncentivesPushed'
 
 export type ActivityItem = {
   kind: ActivityKind
@@ -20,22 +21,25 @@ export type ActivityItem = {
   tx: Hash
   block: bigint
   logIndex: number
-  router: 'v1' | 'v2'
+  router: Router
   time?: number
   args: Record<string, bigint | Address | boolean>
 }
+
+type Router = 'v1' | 'v2' | 'v3'
 
 export type Activity = { items: ActivityItem[]; wallets: number; walletsV2: number; total: number; fires: number }
 
 type RawLog = { topics: Hex[]; data: Hex; block: bigint; tx: Hash; logIndex: number; time?: number }
 
-function decode(raw: RawLog, abi: Abi, router: 'v1' | 'v2'): ActivityItem | null {
+function decode(raw: RawLog, abi: Abi, router: Router): ActivityItem | null {
   try {
     const topics = raw.topics.filter(Boolean) as [Hex, ...Hex[]]
     const d = decodeEventLog({ abi, topics, data: raw.data })
     const args = d.args as unknown as Record<string, bigint | Address | boolean>
     return {
-      kind: d.eventName as unknown as ActivityKind, user: args.user as Address, tx: raw.tx, block: raw.block,
+      // IncentivesPushed has no user: it is listed under the gauge it paid
+      kind: d.eventName as unknown as ActivityKind, user: (args.user ?? args.target) as Address, tx: raw.tx, block: raw.block,
       logIndex: raw.logIndex, router, time: raw.time, args,
     }
   } catch {
@@ -73,7 +77,7 @@ async function recentLogs(address: Address, from: bigint): Promise<RawLog[]> {
   }))
 }
 
-async function routerActivity(address: Address, abi: Abi, from: bigint, router: 'v1' | 'v2', live: boolean) {
+async function routerActivity(address: Address, abi: Abi, from: bigint, router: Router, live: boolean) {
   const [indexed, recent] = await Promise.all([
     indexedLogs(address).catch(() => [] as RawLog[]),
     live ? recentLogs(address, from).catch(() => [] as RawLog[]) : Promise.resolve([] as RawLog[]),
@@ -91,16 +95,19 @@ async function routerActivity(address: Address, abi: Abi, from: bigint, router: 
 }
 
 export async function fetchActivity(): Promise<Activity> {
-  const jobs = [routerActivity(ROUTER_V1, routerEventsV1, ROUTER_V1_BLOCK, 'v1', false)]
-  if (COIL_ROUTER && COIL_ROUTER.toLowerCase() !== ROUTER_V1.toLowerCase()) {
-    jobs.push(routerActivity(COIL_ROUTER, routerEventsV2, ROUTER_V2_BLOCK || ROUTER_V1_BLOCK, 'v2', true))
+  const jobs = [
+    routerActivity(ROUTER_V1, routerEventsV1, ROUTER_V1_BLOCK, 'v1', false),
+    routerActivity(ROUTER_V2, routerEventsV2, ROUTER_V2_BLOCK, 'v2', false),
+  ]
+  if (COIL_ROUTER && ![ROUTER_V1, ROUTER_V2].some((a) => a.toLowerCase() === COIL_ROUTER!.toLowerCase())) {
+    jobs.push(routerActivity(COIL_ROUTER, routerEventsV3 as unknown as Abi, ROUTER_V3_BLOCK, 'v3', true))
   }
   const all = (await Promise.all(jobs)).flat()
   all.sort((a, b) => (a.block === b.block ? b.logIndex - a.logIndex : a.block > b.block ? -1 : 1))
 
-  const wallets = new Set(all.map((i) => i.user.toLowerCase())).size
-  const walletsV2 = new Set(all.filter((i) => i.router === 'v2').map((i) => i.user.toLowerCase())).size
-  const fires = all.filter((i) => i.kind === 'GuardFired' || i.kind === 'ShieldFired').length
+  const wallets = new Set(all.filter((i) => i.kind !== 'IncentivesPushed').map((i) => i.user.toLowerCase())).size
+  const walletsV2 = new Set(all.filter((i) => i.router !== 'v1' && i.kind !== 'IncentivesPushed').map((i) => i.user.toLowerCase())).size
+  const fires = all.filter((i) => i.kind === 'GuardFired' || i.kind === 'ShieldFired' || i.kind === 'RecoilFired').length
   const total = new Set(all.map((i) => i.tx)).size
 
   // timestamps for the few recent items that came from the RPC

@@ -3,6 +3,24 @@
   "network": "Mezo testnet",
   "contracts": {
     "CoilRouter": {
+      "version": "v3",
+      "address": "0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4",
+      "deployTx": "0x927811a52dff769acd0458599026da14aa6ec1692012e75556ea5c19644193eb",
+      "block": 16559650,
+      "verified": "https://explorer.test.mezo.org/address/0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4#code",
+      "treasury": "0xcFe7934D31F6C22DDaFeD72FC065D13eFF48b368",
+      "maxDeviationBps": 300,
+      "feeBps": 0,
+      "incentiveBps": 5,
+      "incentiveTarget": "0x75b6B35Fc78826A0B7E1f9c08bb7d84bd70D0ee1"
+    },
+    "CoilRouterV1": {
+      "version": "v1",
+      "address": "0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16",
+      "deployTx": "0x724a7b45f0fec9fbb97eb427b80ade4e076092db2d2b0e4004794532514c0118",
+      "block": 16188308
+    },
+    "CoilRouterV2": {
       "version": "v2",
       "address": "0xa9adbe2e3ddfbd3795add019c8ea64a950777a92",
       "deployTx": "0xac47acbe97dbf0412a1f2dd2667384572529950859a518d4eb25f27afb2be6d0",
@@ -13,11 +31,11 @@
       "maxDeviationBps": 300,
       "feeBps": 0
     },
-    "CoilRouterV1": {
-      "version": "v1",
-      "address": "0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16",
-      "deployTx": "0x724a7b45f0fec9fbb97eb427b80ade4e076092db2d2b0e4004794532514c0118",
-      "block": 16188308
+    "CoilLens": {
+      "address": "0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353",
+      "deployTx": "0x029603201e38a0e55fa49c0052233913573c41936d4a5e8b822ac6122d7c810b",
+      "block": 16559651,
+      "verified": "https://explorer.test.mezo.org/address/0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353#code"
     }
   },
   "mezo": {
@@ -27,6 +45,8 @@
     "SortedTroves": "0x722E4D24FD6Ff8b0AC679450F3D91294607268fA",
     "MUSDSavingsRate": "0x6f461c68B2c5492C0F5CCEc5a264d692aA7A8e16",
     "MUSD": "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503",
-    "MUSD_BTC_pool": "0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9"
+    "MUSD_BTC_pool": "0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9",
+    "PoolsVoter": "0x263F1Fd5fB7F866881e1B6cD7d5d6c40Fd985F0D",
+    "MUSD_BTC_gauge_incentives": "0x75b6B35Fc78826A0B7E1f9c08bb7d84bd70D0ee1"
   }
 }

@@ -3,8 +3,9 @@ pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {CoilRouter} from "../src/CoilRouter.sol";
+import {CoilLens} from "../src/CoilLens.sol";
 import {
-    MockBTCPrecompile, MockMUSD, MockFactory, MockPool, MockPriceFeed, MockTroves, MockSavings
+    MockBTCPrecompile, MockMUSD, MockFactory, MockPool, MockPriceFeed, MockTroves, MockSavings, MockReward
 } from "./mocks/Mocks.sol";
 
 /// Shared deployment and signing helpers for the unit and invariant suites.
@@ -19,6 +20,7 @@ abstract contract CoilBase is Test {
     MockPool pool;
     MockSavings savings;
     CoilRouter router;
+    CoilLens lens;
 
     address alice;
     uint256 alicePk;
@@ -54,6 +56,7 @@ abstract contract CoilBase is Test {
             BTC,
             treasury
         );
+        lens = new CoilLens(router);
         // MockMUSD has one minter: troves mints/burns; savings mints yield through a test hook below.
         musd.setMinter(address(troves));
         (alice, alicePk) = makeAddrAndKey("alice");
@@ -104,6 +107,32 @@ abstract contract CoilBase is Test {
         );
     }
 
+    function _signRelever(uint256 addColl, uint256 debt, uint256 deadline) internal view returns (bytes memory) {
+        return _sign(
+            troves.ADJUST_TROVE_TYPEHASH(), abi.encode(uint256(0), debt, true, addColl, alice, address(router)), deadline
+        );
+    }
+
+    /// Refinance signed at the current nonce, and the relever signed at the next one.
+    function _signRefinanceThenRelever(uint256 addColl, uint256 debt, uint256 deadline)
+        internal
+        view
+        returns (bytes memory refi, bytes memory adj)
+    {
+        uint256 n = troves.getNonce(alice);
+        refi = _signAt(troves.REFINANCE_TYPEHASH(), abi.encode(alice, uint16(100)), n, deadline);
+        adj = _signAt(
+            troves.ADJUST_TROVE_TYPEHASH(), abi.encode(uint256(0), debt, true, addColl, alice, address(router)), n + 1, deadline
+        );
+    }
+
+    function _signAt(bytes32 typeHash, bytes memory data, uint256 nonce, uint256 deadline) internal view returns (bytes memory) {
+        bytes32 structHash = keccak256(abi.encodePacked(typeHash, data, nonce, deadline));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", troves.domainSeparator(), structHash));
+        (uint8 v, bytes32 r, bytes32 s_) = vm.sign(alicePk, digest);
+        return abi.encodePacked(r, s_, v);
+    }
+
     function _signRepay(uint256 amount, uint256 deadline) internal view returns (bytes memory) {
         return _sign(troves.REPAY_MUSD_TYPEHASH(), abi.encode(amount, alice), deadline);
     }
@@ -141,6 +170,27 @@ abstract contract CoilBase is Test {
         vm.prank(whale);
         MockBTCPrecompile(BTC).transfer(address(pool), btcIn);
         pool.swap(m0 ? musdOut : 0, m0 ? 0 : musdOut, whale, "");
+    }
+
+    /// Move the oracle and arbitrage the pool to the same BTC price (fee ignored).
+    function _market(uint256 price) internal {
+        feed.setPrice(price);
+        (uint256 r0, uint256 r1,) = pool.getReserves();
+        bool m0 = router.musdIsToken0();
+        (uint256 rM, uint256 rB) = m0 ? (r0, r1) : (r1, r0);
+        uint256 targetM = _sqrt(rM * rB / 1e18 * price);
+        if (targetM > rM) _buyBtc(((targetM - rM) * 10_030) / 10_000);
+        else if (targetM < rM) _dumpBtc((((rM - targetM) * 1e18) / price * 10_030) / 10_000);
+    }
+
+    function _sqrt(uint256 x) internal pure returns (uint256 y) {
+        if (x == 0) return 0;
+        uint256 z = (x + 1) / 2;
+        y = x;
+        while (z < y) {
+            y = z;
+            z = (x / z + z) / 2;
+        }
     }
 
     /// Push the pool price by swapping `musdIn` MUSD in (BTC gets dearer in the pool).
@@ -450,7 +500,7 @@ contract CoilRouterTest is CoilBase {
     function test_guard_staleAfterOtherTroveOp() public {
         _coil(1e18, 4e18);
         _armGuard(70_000e18, 50);
-        (bool armed, bool fresh, bool triggered,) = router.guardStatus(alice);
+        (bool armed, bool fresh, bool triggered,) = lens.guardStatus(alice);
         assertTrue(armed && fresh && !triggered);
         // alice deleverages by hand first: MUSD nonce moves, the stored signature is now stale
         uint256 repay = 10_000e18;
@@ -461,7 +511,7 @@ contract CoilRouterTest is CoilBase {
         router.deleverage(w, repay, address(0), address(0), sig, deadline, 0);
 
         feed.setPrice(78_000e18);
-        (armed, fresh,,) = router.guardStatus(alice);
+        (armed, fresh,,) = lens.guardStatus(alice);
         assertTrue(armed && !fresh, "status reports the stale signature");
         feed.setPrice(69_000e18);
         vm.prank(keeper);
@@ -513,7 +563,7 @@ contract CoilRouterTest is CoilBase {
         _armGuard(70_000e18, 50);
         troves.setRecoveryMode(true);
         feed.setPrice(69_000e18);
-        (,,, bool rm) = router.guardStatus(alice);
+        (,,, bool rm) = lens.guardStatus(alice);
         assertTrue(rm);
         vm.prank(keeper);
         vm.expectRevert(bytes("BorrowerOps: Collateral withdrawal not permitted Recovery Mode"));
@@ -633,7 +683,7 @@ contract CoilRouterTest is CoilBase {
         ahead[0] = t1;
         ahead[1] = t2;
         _queue(ahead);
-        (uint256 a, bool found) = router.debtAhead(alice, 10);
+        (uint256 a, bool found) = lens.debtAhead(alice, 10);
         assertTrue(found);
         assertEq(a, 7_800e18);
 
@@ -646,7 +696,7 @@ contract CoilRouterTest is CoilBase {
         ahead = new address[](1);
         ahead[0] = t1;
         _queue(ahead);
-        (,,, bool byPrice, bool byQueue, uint256 a2) = router.shieldStatus(alice, 10);
+        (,,, bool byPrice, bool byQueue, uint256 a2) = lens.shieldStatus(alice, 10);
         assertFalse(byPrice);
         assertTrue(byQueue);
         assertEq(a2, 2_800e18);
@@ -663,7 +713,7 @@ contract CoilRouterTest is CoilBase {
         address[] memory ahead = new address[](1);
         ahead[0] = sick;
         _queue(ahead);
-        (uint256 a, bool found) = router.debtAhead(alice, 10);
+        (uint256 a, bool found) = lens.debtAhead(alice, 10);
         assertTrue(found);
         assertEq(a, 0, "a trove under MCR does not protect alice");
     }
@@ -716,7 +766,7 @@ contract CoilRouterTest is CoilBase {
         bytes memory sig = _signAdjust(w, repay, deadline);
         vm.prank(alice);
         router.deleverage(w, repay, address(0), address(0), sig, deadline, 0);
-        (bool armed, bool fresh,,,,) = router.shieldStatus(alice, 0);
+        (bool armed, bool fresh,,,,) = lens.shieldStatus(alice, 0);
         assertTrue(armed && !fresh);
         feed.setPrice(69_000e18);
         vm.prank(keeper);
@@ -788,7 +838,7 @@ contract CoilRouterTest is CoilBase {
         _armGuard(70_000e18, 50);
         feed.setPrice(69_000e18);
         if (dump > 0) _dumpBtc(dump);
-        (uint256 rM, uint256 rB,) = router.poolState();
+        (uint256 rM, uint256 rB,) = lens.poolState();
         vm.prank(keeper);
         try router.fireGuard(alice, address(0), address(0)) {
             // it fired: the pool price it sold at was within the bound of the oracle
@@ -818,5 +868,171 @@ contract CoilRouterTest is CoilBase {
         router.withdrawReserve(wa);
         assertLe(router.reserveBalance(alice) + router.reserveBalance(bob), savings.balanceOf(address(router)));
         assertEq(musd.balanceOf(address(router)), 0);
+    }
+
+    // ------------------------------------------------------------ v3: relever (leverage up)
+
+    function _releverPlan(uint256 addColl) internal view returns (uint256 debt) {
+        debt = (router.quoteMusdForBtc(addColl) * 1005) / 1000;
+    }
+
+    function test_relever_addsCollateralAndDebtInOneTx() public {
+        _coil(1e18, 2e18);
+        (uint256 c0, uint256 d0,,,,) = troves.getEntireDebtAndColl(alice);
+        uint256 add = 0.5e18;
+        uint256 debt = _releverPlan(add);
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _signRelever(add, debt, deadline);
+        uint256 m0 = musd.balanceOf(alice);
+        vm.prank(alice);
+        uint256 out = router.relever(add, debt, address(0), address(0), sig, "", deadline, 0);
+        (uint256 c1, uint256 d1,,,,) = troves.getEntireDebtAndColl(alice);
+        assertEq(c1, c0 + add);
+        assertEq(d1, d0 + debt + debt / 1000, "debt + borrowing fee");
+        assertGt(out, 0);
+        assertEq(musd.balanceOf(alice) - m0, out, "buffer back to alice");
+        assertEq(address(router).balance, 0);
+        assertEq(musd.balanceOf(address(router)), 0);
+    }
+
+    /// MUSD only lowers borrowing capacity (set at open). After a deleverage, leverage up needs a
+    /// refinance, signed one nonce before the relever and run in the same transaction.
+    function _shrinkCapacityThenRise() internal returns (uint256 add, uint256 debt, uint256 deadline) {
+        _coil(1e18, 4e18);
+        uint256 repay = 150_000e18;
+        uint256 w = (router.quoteBtcForMusd(repay) * 102) / 100;
+        deadline = block.timestamp + 1 hours;
+        bytes memory sig = _signAdjust(w, repay, deadline);
+        vm.prank(alice);
+        router.deleverage(w, repay, address(0), address(0), sig, deadline, 0);
+        _market(90_000e18); // BTC up 12.5%: room to lever up again, but capacity is still the old one
+        add = 0.8e18;
+        debt = _releverPlan(add);
+    }
+
+    function test_relever_blockedByShrunkCapacity() public {
+        (uint256 add, uint256 debt, uint256 deadline) = _shrinkCapacityThenRise();
+        bytes memory sig = _signRelever(add, debt, deadline);
+        vm.prank(alice);
+        vm.expectRevert(bytes("BorrowerOps: An operation that exceeds maxBorrowingCapacity is not permitted"));
+        router.relever(add, debt, address(0), address(0), sig, "", deadline, 0);
+    }
+
+    function test_relever_withRefinanceResetsCapacity() public {
+        (uint256 add, uint256 debt, uint256 deadline) = _shrinkCapacityThenRise();
+        (bytes memory refi, bytes memory adj) = _signRefinanceThenRelever(add, debt, deadline);
+        uint256 n0 = troves.getNonce(alice);
+        vm.prank(alice);
+        router.relever(add, debt, address(0), address(0), adj, refi, deadline, 0);
+        assertEq(troves.getNonce(alice), n0 + 2, "refinance then adjust consumed two nonces");
+        (uint256 c,,,,,) = troves.getEntireDebtAndColl(alice);
+        assertGt(c, 2e18);
+    }
+
+    function test_relever_sandwichedPoolReverts() public {
+        _coil(1e18, 2e18);
+        uint256 add = 0.5e18;
+        uint256 debt = (_releverPlan(add) * 110) / 100;
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _signRelever(add, debt, deadline);
+        _buyBtc(2_400_000e18);
+        vm.prank(alice);
+        vm.expectPartialRevert(CoilRouter.PriceDeviation.selector);
+        router.relever(add, debt, address(0), address(0), sig, "", deadline, 0);
+    }
+
+    // ------------------------------------------------------------ v3: recoil (signed re-leverage)
+
+    function _armRecoil(uint128 triggerIcr, uint256 add, uint16 bounty) internal returns (uint256 debt) {
+        debt = (_releverPlan(add) * 135) / 100; // sized for BTC up to ~35% dearer at fire time
+        uint64 deadline = uint64(block.timestamp + 30 days);
+        bytes memory sig = _signRelever(add, debt, deadline);
+        vm.prank(alice);
+        router.armRecoil(triggerIcr, uint128(add), uint128(debt), bounty, deadline, sig, "");
+    }
+
+    function test_recoil_firesWhenRatioClimbsBack() public {
+        _coil(1e18, 2.5e18); // ~160%
+        uint256 debt = _armRecoil(2e18, 0.4e18, 30);
+        vm.prank(keeper);
+        vm.expectPartialRevert(CoilRouter.NotTriggered.selector);
+        router.fireRecoil(alice, address(0), address(0));
+
+        // BTC +30%, the pool follows: ratio over 200%
+        _market(104_000e18);
+        (bool armed, bool fresh, bool triggered,,) = lens.recoilStatus(alice);
+        assertTrue(armed && fresh && triggered);
+        vm.prank(keeper);
+        uint256 bounty = router.fireRecoil(alice, address(0), address(0));
+        assertEq(bounty, (debt * 30) / 10_000);
+        assertEq(musd.balanceOf(keeper), bounty);
+        (uint256 c,,,,,) = troves.getEntireDebtAndColl(alice);
+        assertEq(c, 2.5e18 + 0.4e18);
+        assertEq(router.recoilOf(alice).signature.length, 0, "consumed");
+        assertEq(musd.balanceOf(address(router)), 0);
+    }
+
+    /// A redemption shrinks debt and collateral at par, so the ratio rises and the position loses
+    /// leverage. Recoil puts it back without the user doing anything.
+    function test_recoil_restoresLeverageAfterRedemption() public {
+        _coil(1e18, 3e18);
+        (uint256 c0, uint256 d0,,,,) = troves.getEntireDebtAndColl(alice);
+        uint256 icr0 = (c0 * PRICE) / d0;
+        _armRecoil(uint128(icr0 + 0.15e18), 0.5e18, 0);
+        troves.redeem(alice, 60_000e18); // redeemers take 60k of debt
+        vm.prank(keeper);
+        router.fireRecoil(alice, address(0), address(0));
+        (uint256 c1, uint256 d1,,,,) = troves.getEntireDebtAndColl(alice);
+        assertLt((c1 * PRICE) / d1, icr0 + 0.15e18, "leverage restored");
+    }
+
+    function test_recoil_staleAfterSignedOp() public {
+        _coil(1e18, 2.5e18);
+        _armRecoil(2e18, 0.4e18, 30);
+        uint256 repay = 10_000e18;
+        uint256 w = (router.quoteBtcForMusd(repay) * 102) / 100;
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _signAdjust(w, repay, deadline);
+        vm.prank(alice);
+        router.deleverage(w, repay, address(0), address(0), sig, deadline, 0);
+        (bool armed, bool fresh,,,) = lens.recoilStatus(alice);
+        assertTrue(armed && !fresh);
+    }
+
+    function test_recoil_rejectsBadParams() public {
+        vm.startPrank(alice);
+        vm.expectRevert(CoilRouter.BadParam.selector);
+        router.armRecoil(1.05e18, 1, 1, 0, uint64(block.timestamp + 1), hex"01", ""); // trigger under MCR
+        vm.expectRevert(CoilRouter.BadParam.selector);
+        router.armRecoil(2e18, 1, 1, 201, uint64(block.timestamp + 1), hex"01", "");
+        vm.expectRevert(CoilRouter.BadParam.selector);
+        router.armRecoil(2e18, 0, 1, 0, uint64(block.timestamp + 1), hex"01", "");
+        vm.stopPrank();
+    }
+
+    // ------------------------------------------------------------ v3: gauge incentives
+
+    function test_incentives_accrueOnCoilAndPushToGauge() public {
+        MockReward reward = new MockReward(musd);
+        router.setIncentives(address(reward), 5); // 0.05% of the debt
+        (, uint256 debt) = _coil(1e18, 3e18);
+        uint256 expected = (debt * 5) / 10_000;
+        assertEq(router.pendingIncentives(), expected);
+        assertEq(musd.balanceOf(address(router)), expected, "held only until pushed");
+        router.pushIncentives();
+        assertEq(reward.received(), expected);
+        assertEq(router.pendingIncentives(), 0);
+        assertEq(musd.balanceOf(address(router)), 0);
+    }
+
+    function test_incentives_cappedAndOwnerOnly() public {
+        vm.expectRevert(CoilRouter.BadParam.selector);
+        router.setIncentives(address(1), 21);
+        vm.expectRevert(CoilRouter.BadParam.selector);
+        router.setIncentives(address(0), 5);
+        vm.prank(alice);
+        vm.expectRevert(CoilRouter.Unauthorized.selector);
+        router.setIncentives(address(1), 5);
+        assertEq(router.pushIncentives(), 0, "nothing to push");
     }
 }

@@ -5,10 +5,10 @@ import { formatEther, parseEther } from 'viem'
 import { COIL_ROUTER, explorerAddr, explorerTx, MUSD, ROUTER_V1 } from '../lib/chain'
 import { DEPLOY_TX, useActivity, type ActivityItem } from '../lib/activity'
 import {
-  useBtcHistory, useGuard, useMarket, useRadar, useReserve, useShield, useSurplus, useTrove, redemptionShield, type MarketState,
+  useBtcHistory, useGuard, useMarket, useRadar, useRecoil, useReserve, useShield, useSurplus, useTrove, redemptionShield, type MarketState,
 } from '../lib/live'
 import {
-  amountIn, fromWad, maxLeverage, planClose, planGuard, planOpen, planShield, toWad, WAD, type OpenPlan,
+  amountIn, fromWad, maxLeverage, planClose, planGuard, planOpen, planShield, releverPlan, toWad, WAD, type OpenPlan,
 } from '../lib/math'
 import { historicalTouchRate, realizedVol, touchProbability } from '../lib/risk'
 import { fmtBtc, fmtCompact, fmtNum, fmtPct, fmtUsd, shortAddr } from '../lib/format'
@@ -37,6 +37,7 @@ export function AppPage() {
   const reserveQ = useReserve(address)
   const shieldQ = useShield(trove ? address : undefined)
   const surplusQ = useSurplus(address)
+  const recoilQ = useRecoil(trove ? address : undefined)
   const hist = useBtcHistory()
   const actions = useCoilActions()
 
@@ -123,6 +124,9 @@ export function AppPage() {
             {position && (
               <GuardPanel m={m} position={position} trigger={triggerV} setTrigger={setTrigger} lo={triggerLo} hi={triggerHi}
                 live={!!trove} guard={guardQ.data} actions={actions} />
+            )}
+            {position && (
+              <RecoilPanel m={m} position={position} live={!!trove} recoil={recoilQ.data} actions={actions} />
             )}
             {position && (
               <ShieldPanel m={m} position={position} live={!!trove} trigger={triggerV} reserve={reserveQ.data}
@@ -338,6 +342,7 @@ function ManagePanel({ m, trove, actions }: {
             {actions.busy === 'Deleverage' ? 'Working…' : 'Deleverage in one transaction'}
           </button>
         </div>
+        <LeverUp m={m} trove={trove} actions={actions} />
         <div className="field" style={{ borderTop: '1px solid var(--rule)', paddingTop: 20 }}>
           <span className="mono muted">Close everything</span>
           <div className="rows">
@@ -352,6 +357,119 @@ function ManagePanel({ m, trove, actions }: {
           </button>
           {m.recoveryMode && <p className="note note--danger">Closing is paused while MUSD is in recovery mode.</p>}
         </div>
+      </div>
+    </section>
+  )
+}
+
+/** Lever an open trove up in one transaction: flash BTC in, borrow the MUSD that pays for it. */
+function LeverUp({ m, trove, actions }: {
+  m: MarketState
+  trove: { coll: bigint; debt: bigint }
+  actions: ReturnType<typeof useCoilActions>
+}) {
+  const price = fromWad(m.price)
+  const C = fromWad(trove.coll)
+  const D = fromWad(trove.debt)
+  const levNow = (C * price) / (C * price - D)
+  const [step, setStep] = useState(0.5)
+  const plan = releverPlan(m, trove, levNow + step)
+  return (
+    <div className="field" style={{ borderTop: '1px solid var(--rule)', paddingTop: 20 }}>
+      <span className="mono muted">Leverage up · now {levNow.toFixed(2)}×</span>
+      <div className="inp-row">
+        {[0.25, 0.5, 1].map((v) => (
+          <button key={v} className="mini" aria-pressed={v === step} onClick={() => setStep(v)}>+{v}×</button>
+        ))}
+      </div>
+      {plan.ok ? (
+        <div className="rows">
+          <div className="row"><span>BTC added (flash)</span><span>{fmtBtc(fromWad(plan.addColl), 4)}</span></div>
+          <div className="row"><span>MUSD borrowed</span><span>{fmtNum(fromWad(plan.debtIncrease))}</span></div>
+          <div className="row row--strong"><span>Ratio after</span><span>{fmtPct(plan.crAfter, 0)}</span></div>
+        </div>
+      ) : (
+        <p className="note">{plan.reason}</p>
+      )}
+      <span className="field__hint">If MUSD's borrowing capacity is too small, you sign a refinance too; both run in the same transaction.</span>
+      <StepList step={actions.step} active={actions.busy === 'Leverage up'} labels={['Sign the adjustment', 'Send one transaction', 'Mezo confirms']} />
+      <button className="btn btn--block" disabled={!!actions.busy || !plan.ok || !actions.ready || m.recoveryMode}
+        onClick={() => actions.relever(plan.addColl, plan.debtIncrease)}>
+        {actions.busy === 'Leverage up' ? 'Working…' : 'Leverage up in one transaction'}
+      </button>
+    </div>
+  )
+}
+
+/* ------------------------------------------------------------------ recoil */
+
+function RecoilPanel({ m, position, live, recoil, actions }: {
+  m: MarketState
+  position: Position
+  live: boolean
+  recoil?: import('../lib/live').RecoilState
+  actions: ReturnType<typeof useCoilActions>
+}) {
+  const price = fromWad(m.price)
+  const t = { coll: toWad(position.coll), debt: toWad(position.debt) }
+  const crNow = (position.coll * price) / position.debt
+  const levNow = (position.coll * price) / (position.coll * price - position.debt)
+  const [band, setBand] = useState(0.25)
+  // fire when the ratio is `band` above today's: BTC rose, or a redemption cut the debt
+  const triggerIcr = crNow + band
+  // at the trigger the position has lost leverage; the signed relever puts it back to today's
+  const plan = releverPlan({ ...m, price: toWad(price * (triggerIcr / crNow)) }, t, levNow, 1.25)
+  const demo = releverPlan(m, t, levNow + 0.25, 1.05)
+  const armed = recoil?.armed
+  return (
+    <section className="panel" aria-labelledby="recoil-h">
+      <div className="panel__h">
+        <h3 id="recoil-h">Recoil · back to target leverage</h3>
+        {armed ? (
+          <span className="pill" data-s={recoil!.fresh ? (recoil!.triggered ? 'danger' : 'ok') : 'watch'}>
+            {recoil!.fresh ? (recoil!.triggered ? 'Triggered, waiting for a keeper' : `Armed at ${fmtPct(recoil!.triggerIcr, 0)}`) : 'Stale, sign again'}
+          </span>
+        ) : (
+          <span className="pill" data-s="idle">Not armed</span>
+        )}
+      </div>
+      <div className="panel__b">
+        <div className="field">
+          <span className="mono muted">Fire when the ratio climbs by</span>
+          <div className="inp-row">
+            {[0.15, 0.25, 0.5].map((v) => <button key={v} className="mini" aria-pressed={v === band} onClick={() => setBand(v)}>+{Math.round(v * 100)} pts</button>)}
+          </div>
+        </div>
+        {plan.ok ? (
+          <div className="rows">
+            <div className="row"><span>Fires at a ratio of</span><span>{fmtPct(triggerIcr, 0)}</span></div>
+            <div className="row"><span>Adds, at most</span><span>{fmtBtc(fromWad(plan.addColl), 4)} BTC · {fmtNum(fromWad(plan.debtIncrease))} MUSD</span></div>
+            <div className="row"><span>Leverage restored to</span><span>{levNow.toFixed(2)}×</span></div>
+            <div className="row"><span>Keeper bounty</span><span>0.30% of the MUSD borrowed</span></div>
+            {recoil && <div className="row"><span>Borrowing capacity left</span><span>{fmtNum(fromWad(recoil.capacity))} MUSD</span></div>}
+          </div>
+        ) : (
+          <p className="note">{plan.reason}</p>
+        )}
+        <p className="field__hint" style={{ margin: 0 }}>
+          When BTC rises, or a redemption shrinks your debt, your position loses leverage. Recoil is a signed leverage-up that the keeper runs once your ratio reaches the trigger, with the same price-feed bound as every Coil swap. Redemptions stop being a reason to watch the screen.
+        </p>
+        <StepList step={actions.step} active={actions.busy === 'Arm Recoil'} labels={['Sign the leverage-up', 'Store it with the trigger', 'Mezo confirms']} />
+        <div className="cta-row">
+          <button className="btn" disabled={!live || !plan.ok || !!actions.busy || !actions.ready}
+            onClick={() => actions.armRecoil(triggerIcr, plan.addColl, plan.debtIncrease, 30)}>
+            {actions.busy === 'Arm Recoil' ? 'Working…' : armed ? 'Re-arm Recoil' : 'Arm Recoil'}
+          </button>
+          {armed && <button className="btn btn--ghost" disabled={!!actions.busy} onClick={() => actions.disarmRecoil()}>Disarm</button>}
+          {live && demo.ok && (
+            <button className="btn btn--ghost" disabled={!!actions.busy || !actions.ready}
+              onClick={() => actions.armRecoil(Math.max(1.12, crNow - 0.02), demo.addColl, demo.debtIncrease, 1)}
+              title="Arms a Recoil your trove already qualifies for: the keeper levers it up by 0.25x within a minute">
+              Test it now
+            </button>
+          )}
+        </div>
+        {!live && <p className="field__hint" style={{ margin: 0 }}>Open the position first; Recoil manages a live trove.</p>}
       </div>
     </section>
   )
@@ -760,6 +878,8 @@ function ReplayPanel({ closes, startDay, stepDays, leverage, interestBps, source
 const KIND_COPY: Record<ActivityItem['kind'], string> = {
   Coiled: 'Coil', Unwound: 'Unwind', Delevered: 'Deleverage', GuardArmed: 'Guard armed', GuardDisarmed: 'Guard disarmed', GuardFired: 'Guard fired',
   ReserveDeposited: 'Reserve in', ReserveWithdrawn: 'Reserve out', ShieldArmed: 'Shield armed', ShieldDisarmed: 'Shield disarmed', ShieldFired: 'Shield fired',
+  Relevered: 'Leverage up', RecoilArmed: 'Recoil armed', RecoilDisarmed: 'Recoil disarmed', RecoilFired: 'Recoil fired',
+  IncentivesAccrued: 'Gauge incentive', IncentivesPushed: 'Incentives sent',
 }
 
 function activityDetail(i: ActivityItem) {
@@ -775,6 +895,11 @@ function activityDetail(i: ActivityItem) {
     case 'ReserveDeposited': return `${musd(a.amount)} into sMUSD`
     case 'ReserveWithdrawn': return `${musd(a.amount)} back to the wallet`
     case 'ShieldArmed': return `repays ${musd(a.repayAmount)}${a.triggerPrice ? ` at ${fmtUsd(fromWad(a.triggerPrice))}` : ''}${a.maxDebtAhead ? `, or under ${fmtCompact(fromWad(a.maxDebtAhead))} MUSD ahead` : ''}`
+    case 'Relevered': return `${btc(a.collAdded)} added, ${musd(a.debtAdded)} borrowed`
+    case 'RecoilArmed': return `fires at ${fmtPct(Number(a.triggerIcr) / 1e18, 0)}, adds ${btc(a.addColl)}`
+    case 'RecoilFired': return `at ${fmtPct(Number(a.icr) / 1e18, 0)}, back to target leverage`
+    case 'IncentivesAccrued': return `${musd(a.amount)} for the MUSD/BTC gauge`
+    case 'IncentivesPushed': return `${musd(a.amount)} to the MUSD/BTC gauge incentives`
     case 'ShieldFired': return `${musd(a.repaid)} repaid from the Reserve, ${(i.args.byRedemptionQueue as boolean) ? 'redemption trigger' : `at ${fmtUsd(fromWad(a.price))}`}`
     default: return ''
   }

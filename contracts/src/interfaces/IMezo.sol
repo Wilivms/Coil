@@ -66,7 +66,22 @@ interface IBorrowerOperationsSignatures {
         uint256 deadline
     ) external;
 
+    /// Re-prices the trove at the current global rate and resets its borrowing capacity to
+    /// coll * price / 110% (MUSD only lowers that capacity otherwise). Charges MUSD's refinancing fee.
+    function refinanceWithSignature(
+        address upperHint,
+        address lowerHint,
+        address borrower,
+        bytes memory signature,
+        uint256 deadline
+    ) external;
+
     function getNonce(address user) external view returns (uint256);
+}
+
+/// Mezo Pools incentive (bribe) contract of a gauge: rewards veBTC voters for that pool.
+interface IReward {
+    function notifyRewardAmount(address token, uint256 amount) external;
 }
 
 /// MUSD's redemption queue: sorted by nominal ICR (principal only), highest first.
@@ -111,6 +126,10 @@ interface ITroveManager {
     function getCurrentICR(address borrower, uint256 price) external view returns (uint256);
 
     function checkRecoveryMode(uint256 price) external view returns (bool);
+
+    /// MUSD caps a trove's debt at coll * price / 110% measured at open (or last refinance);
+    /// adding collateral does not raise it.
+    function getTroveMaxBorrowingCapacity(address borrower) external view returns (uint256);
 }
 
 interface IPriceFeed {

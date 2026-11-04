@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { createPublicClient, http, type Address } from 'viem'
-import { ADDR, COIL_ROUTER, mezoTestnet } from './chain'
+import { ADDR, COIL_LENS, COIL_ROUTER, mezoTestnet } from './chain'
 import {
-  borrowerOpsAbi, bosAbi, coilRouterAbi, collSurplusAbi, erc20Abi, interestRateManagerAbi, poolAbi, poolFactoryAbi,
+  borrowerOpsAbi, bosAbi, coilLensAbi, coilRouterAbi, collSurplusAbi, erc20Abi, interestRateManagerAbi, poolAbi, poolFactoryAbi,
   priceFeedAbi, troveManagerAbi,
 } from './abis'
 import { GAS_COMP, type Market, type Trove } from './math'
@@ -107,7 +107,7 @@ export function useGuard(user?: Address) {
     queryFn: async (): Promise<GuardState> => {
       const [g, s] = await Promise.all([
         client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'guardOf', args: [user!] }),
-        client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'guardStatus', args: [user!] }),
+        client.readContract({ address: COIL_LENS, abi: coilLensAbi, functionName: 'guardStatus', args: [user!] }),
       ])
       return {
         armed: s[0], fresh: s[1], triggered: s[2], recoveryMode: s[3], triggerPrice: g.triggerPrice,
@@ -170,13 +170,42 @@ export function useShield(user?: Address) {
     queryFn: async (): Promise<ShieldState> => {
       const [sh, st, da] = await Promise.all([
         client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'shieldOf', args: [user!] }),
-        client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'shieldStatus', args: [user!, QUEUE_STEPS] }),
-        client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'debtAhead', args: [user!, QUEUE_STEPS] }),
+        client.readContract({ address: COIL_LENS, abi: coilLensAbi, functionName: 'shieldStatus', args: [user!, QUEUE_STEPS] }),
+        client.readContract({ address: COIL_LENS, abi: coilLensAbi, functionName: 'debtAhead', args: [user!, QUEUE_STEPS] }),
       ])
       return {
         armed: st[0], fresh: st[1], funded: st[2], byPrice: st[3], byQueue: st[4], ahead: da[0], found: da[1],
         repayAmount: sh.repayAmount, triggerPrice: sh.triggerPrice, maxDebtAhead: sh.maxDebtAhead,
         bountyMusd: sh.bountyMusd, deadline: sh.deadline,
+      }
+    },
+  })
+}
+
+export type RecoilState = {
+  armed: boolean
+  fresh: boolean
+  triggered: boolean
+  icr: number
+  capacity: bigint // MUSD still borrowable under MUSD's borrowing capacity
+  triggerIcr: number
+  addColl: bigint
+  debtIncrease: bigint
+}
+
+export function useRecoil(user?: Address) {
+  return useQuery({
+    queryKey: ['recoil', user],
+    enabled: !!user && !!COIL_ROUTER,
+    refetchInterval: 20_000,
+    queryFn: async (): Promise<RecoilState> => {
+      const [st, r] = await Promise.all([
+        client.readContract({ address: COIL_LENS, abi: coilLensAbi, functionName: 'recoilStatus', args: [user!] }),
+        client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'recoilOf', args: [user!] }),
+      ])
+      return {
+        armed: st[0], fresh: st[1], triggered: st[2], icr: Number(st[3]) / 1e18, capacity: st[4],
+        triggerIcr: Number(r.triggerIcr) / 1e18, addColl: r.addColl, debtIncrease: r.debtIncrease,
       }
     },
   })

@@ -1,13 +1,15 @@
 /**
- * Coil keeper. Watches every armed Guard and Shield on CoilRouter v2 and fires them as soon as
- * their condition holds on-chain:
+ * Coil keeper. Watches every armed Guard, Shield and Recoil on CoilRouter v3 and fires them as soon
+ * as their condition holds on-chain, and pushes the MUSD collected for the gauge:
  *   - Guard:  MUSD's price feed is at or below the trigger (signed deleverage, BTC bounty)
  *   - Shield: price at or below its trigger, or little debt ahead in the redemption queue
  *             (signed repay from the user's Reserve, MUSD bounty)
+ *   - Recoil: the trove's ratio is back above its trigger (signed leverage-up, MUSD bounty)
+ *   - pushIncentives: sends collected MUSD to the MUSD/BTC gauge incentives (no bounty)
  * The contract re-checks every condition itself, so a keeper can only fire what is due.
  * Anyone can run this.
  *
- *   COIL_ROUTER=0x... KEEPER_PRIVATE_KEY=0x... npm start
+ *   COIL_ROUTER=0x... COIL_LENS=0x... KEEPER_PRIVATE_KEY=0x... npm start
  *   optional: FROM_BLOCK=<router deploy block>  POLL_SECONDS=15  DRY_RUN=1  ONCE=1 (single pass)
  *             RUN_FOR_SECONDS=300 (poll for that long, then exit: used by the self-chaining GitHub Action)
  */
@@ -23,17 +25,26 @@ const mezoTestnet = defineChain({
 
 const ROUTER = process.env.COIL_ROUTER
 if (!ROUTER) throw new Error('Set COIL_ROUTER to the deployed CoilRouter address')
+const LENS = process.env.COIL_LENS
+if (!LENS) throw new Error('Set COIL_LENS to the deployed CoilLens address')
 const POLL = Number(process.env.POLL_SECONDS ?? 15) * 1000
 const DRY = !!process.env.DRY_RUN
 const ONCE = !!process.env.ONCE
 const STEPS = 200n // redemption-queue walk, capped by the contract
 const ZERO = '0x0000000000000000000000000000000000000000'
 
-const abi = parseAbi([
+const lensAbi = parseAbi([
   'function guardStatus(address user) view returns (bool armed, bool fresh, bool triggered, bool recoveryMode)',
-  'function fireGuard(address user, address upperHint, address lowerHint) returns (uint256)',
   'function shieldStatus(address user, uint256 maxSteps) view returns (bool armed, bool fresh, bool funded, bool byPrice, bool byQueue, uint256 ahead)',
+  'function recoilStatus(address user) view returns (bool armed, bool fresh, bool triggered, uint256 icr, uint256 capacity)',
+])
+const abi = parseAbi([
+  'function fireGuard(address user, address upperHint, address lowerHint) returns (uint256)',
   'function fireShield(address user, address upperHint, address lowerHint, uint256 maxSteps) returns (uint256)',
+  'function fireRecoil(address user, address upperHint, address lowerHint) returns (uint256)',
+  'function pushIncentives() returns (uint256)',
+  'function pendingIncentives() view returns (uint256)',
+  'event RecoilArmed(address indexed user, uint256 triggerIcr, uint256 addColl, uint256 debtIncrease, uint256 bountyBps, uint256 deadline)',
   'event GuardArmed(address indexed user, uint256 triggerPrice, uint256 collWithdrawal, uint256 debtRepay, uint256 minBtcOut, uint256 bountyBps, uint256 deadline)',
   'event ShieldArmed(address indexed user, uint256 repayAmount, uint256 triggerPrice, uint256 maxDebtAhead, uint256 bountyMusd, uint256 deadline)',
 ])
@@ -46,6 +57,8 @@ if (!wallet && !DRY) throw new Error('Set KEEPER_PRIVATE_KEY (or DRY_RUN=1 to on
 
 const guards = new Set()
 const shields = new Set()
+const recoils = new Set()
+let lastPush = 0
 let cursor = BigInt(process.env.FROM_BLOCK || 0)
 let fired = 0
 
@@ -55,7 +68,7 @@ async function syncUsers() {
   for (let from = cursor; from <= head; from += step) {
     const to = from + step - 1n > head ? head : from + step - 1n
     const logs = await pub.getLogs({ address: ROUTER, events, fromBlock: from, toBlock: to })
-    for (const l of logs) (l.eventName === 'GuardArmed' ? guards : shields).add(l.args.user)
+    for (const l of logs) ({ GuardArmed: guards, ShieldArmed: shields, RecoilArmed: recoils })[l.eventName].add(l.args.user)
   }
   cursor = head + 1n
 }
@@ -79,13 +92,13 @@ async function fire(kind, user, functionName, args, unit) {
 async function tick() {
   await syncUsers()
   for (const user of guards) {
-    const [armed, fresh, triggered] = await pub.readContract({ address: ROUTER, abi, functionName: 'guardStatus', args: [user] })
+    const [armed, fresh, triggered] = await pub.readContract({ address: LENS, abi: lensAbi, functionName: 'guardStatus', args: [user] })
     if (!armed) { guards.delete(user); continue }
     if (fresh && triggered) await fire('guard', user, 'fireGuard', [user, ZERO, ZERO], 'BTC')
   }
   for (const user of shields) {
     const [armed, fresh, funded, byPrice, byQueue, ahead] = await pub.readContract({
-      address: ROUTER, abi, functionName: 'shieldStatus', args: [user, STEPS],
+      address: LENS, abi: lensAbi, functionName: 'shieldStatus', args: [user, STEPS],
     })
     if (!armed) { shields.delete(user); continue }
     if (fresh && funded && (byPrice || byQueue)) {
@@ -93,13 +106,27 @@ async function tick() {
       await fire('shield', user, 'fireShield', [user, ZERO, ZERO, STEPS], 'MUSD')
     }
   }
+  for (const user of recoils) {
+    const [armed, fresh, triggered, icr] = await pub.readContract({ address: LENS, abi: lensAbi, functionName: 'recoilStatus', args: [user] })
+    if (!armed) { recoils.delete(user); continue }
+    if (fresh && triggered) {
+      console.log(`[recoil] ${user}: ratio ${(Number(icr) / 1e16).toFixed(0)}%, back to target leverage`)
+      await fire('recoil', user, 'fireRecoil', [user, ZERO, ZERO], 'MUSD')
+    }
+  }
+  // gauge incentives: push what was collected, at most every 10 minutes
+  if (Date.now() - lastPush > 600_000) {
+    const pending = await pub.readContract({ address: ROUTER, abi, functionName: 'pendingIncentives' })
+    if (pending > 0n) await fire('incentives', 'MUSD/BTC gauge', 'pushIncentives', [], 'MUSD')
+    lastPush = Date.now()
+  }
 }
 
 console.log(`Coil keeper watching ${ROUTER} on Mezo testnet${ONCE ? ' (single pass)' : ` every ${POLL / 1000}s`}${DRY ? ' (dry run)' : ''}`)
 const RUN_FOR = Number(process.env.RUN_FOR_SECONDS ?? 0) * 1000
 if (ONCE) {
   await tick()
-  console.log(`[keeper] ${guards.size} Guards and ${shields.size} Shields armed, ${fired} fired this pass`)
+  console.log(`[keeper] ${guards.size} Guards, ${shields.size} Shields, ${recoils.size} Recoils armed, ${fired} fired this pass`)
 } else if (RUN_FOR > 0) {
   const end = Date.now() + RUN_FOR
   let passes = 0
@@ -107,7 +134,7 @@ if (ONCE) {
     try { await tick(); passes++ } catch (e) { console.warn('[keeper] tick failed:', e.shortMessage ?? e.message) }
     await new Promise((r) => setTimeout(r, POLL))
   }
-  console.log(`[keeper] ${passes} passes, ${guards.size} Guards and ${shields.size} Shields armed, ${fired} fired`)
+  console.log(`[keeper] ${passes} passes, ${guards.size} Guards, ${shields.size} Shields, ${recoils.size} Recoils armed, ${fired} fired`)
 } else {
   for (;;) {
     try { await tick() } catch (e) { console.warn('[keeper] tick failed:', e.shortMessage ?? e.message) }

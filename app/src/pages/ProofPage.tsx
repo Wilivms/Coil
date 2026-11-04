@@ -1,9 +1,10 @@
-import { COIL_ROUTER, explorerAddr, explorerTx, ROUTER_V1 } from '../lib/chain'
+import { COIL_LENS, COIL_ROUTER, explorerAddr, explorerTx, GAUGE_INCENTIVES, ROUTER_V1, ROUTER_V2 } from '../lib/chain'
 import { DEPLOY_TX, useActivity, type ActivityItem, type ActivityKind } from '../lib/activity'
 import { shortAddr } from '../lib/format'
 
 const REPO = 'https://github.com/Wilivms/Coil'
 const V2_DEPLOY_TX = '0xac47acbe97dbf0412a1f2dd2667384572529950859a518d4eb25f27afb2be6d0'
+const V3_DEPLOY_TX = '0x927811a52dff769acd0458599026da14aa6ec1692012e75556ea5c19644193eb'
 
 /** The first time each Coil flow happened on CoilRouter v2, read live from its events. */
 const MILESTONES: { kind: ActivityKind; label: string; what: string }[] = [
@@ -14,12 +15,15 @@ const MILESTONES: { kind: ActivityKind; label: string; what: string }[] = [
   { kind: 'ShieldArmed', label: 'Shield armed', what: 'signed RepayMUSD with price and redemption triggers' },
   { kind: 'ShieldFired', label: 'Shield fired by the keeper', what: 'repay from the Reserve, works in Recovery Mode' },
   { kind: 'Delevered', label: 'Deleverage', what: 'adjustTroveWithSignature in a flash swap' },
+  { kind: 'Relevered', label: 'Leverage up in one transaction', what: 'flash BTC in + adjustTroveWithSignature (debt increase)' },
+  { kind: 'RecoilFired', label: 'Recoil fired by the keeper', what: 'back to target leverage after BTC rose or a redemption' },
+  { kind: 'IncentivesPushed', label: 'MUSD sent to the MUSD/BTC gauge incentives', what: 'a share of each coil deepens the pool Coil trades on' },
   { kind: 'Unwound', label: 'Position closed in one transaction', what: 'closeTroveWithSignature in a flash swap' },
 ]
 
 function firstOf(items: ActivityItem[], kind: ActivityKind) {
-  const v2 = items.filter((i) => i.router === 'v2' && i.kind === kind)
-  return v2.length ? v2[v2.length - 1] : undefined // items are newest first
+  const w2 = items.filter((i) => i.router !== 'v1' && i.kind === kind)
+  return w2.length ? w2[w2.length - 1] : undefined // items are newest first
 }
 
 const TESTS: [string, string][] = [
@@ -30,6 +34,9 @@ const TESTS: [string, string][] = [
   ['Redemption queue walked on the real 350-trove list', 'test_fork_debtAheadOnRealQueue'],
   ['Shield works in Recovery Mode', 'test_shield_worksInRecoveryMode'],
   ['Pending redistribution never counted twice', 'test_closeAmount_doesNotDoubleCountPending'],
+  ['Refinance + leverage up on a real trove, two signatures in one tx', 'test_fork_refinanceThenReleverOnRealMezo'],
+  ['Incentives land in the real MUSD/BTC gauge contract', 'test_fork_incentivesReachRealGauge'],
+  ['Recoil restores leverage after a redemption', 'test_recoil_restoresLeverageAfterRedemption'],
   ['Router never keeps BTC or MUSD, never owns a trove, Reserve always backed', 'invariant_* (random flows + pool attacks)'],
 ]
 
@@ -51,14 +58,18 @@ export function ProofPage() {
           <div className="kpi kpi--accent"><span className="mono">Wallets</span><span className="kpi__v">{q.data?.wallets ?? '…'}</span><span className="kpi__s">that used Coil (v1 + v2)</span></div>
           <div className="kpi"><span className="mono">Transactions</span><span className="kpi__v">{q.data?.total ?? '…'}</span><span className="kpi__s">CoilRouter calls</span></div>
           <div className="kpi"><span className="mono">Keeper fires</span><span className="kpi__v">{q.data?.fires ?? '…'}</span><span className="kpi__s">Guards and Shields executed</span></div>
-          <div className="kpi"><span className="mono">Wallets on v2</span><span className="kpi__v">{q.data?.walletsV2 ?? '…'}</span><span className="kpi__s">since Nov 4, 2026</span></div>
+          <div className="kpi"><span className="mono">Wallets in Wave 2</span><span className="kpi__v">{q.data?.walletsV2 ?? '…'}</span><span className="kpi__s">since Nov 4, 2026</span></div>
         </div>
 
         <section className="panel" style={{ marginBottom: 24 }}>
           <div className="panel__h"><h3>Contracts</h3><span className="pill" data-s="ok">Source-verified</span></div>
           <div className="panel__b">
             <div className="rows">
-              {COIL_ROUTER && <div className="row"><span>CoilRouter v2 (Wave 2)</span><a className="mono" href={`${explorerAddr(COIL_ROUTER)}#code`} target="_blank" rel="noreferrer">{shortAddr(COIL_ROUTER)} ↗</a></div>}
+              {COIL_ROUTER && <div className="row"><span>CoilRouter v3 (Wave 2, current)</span><a className="mono" href={`${explorerAddr(COIL_ROUTER)}#code`} target="_blank" rel="noreferrer">{shortAddr(COIL_ROUTER)} ↗</a></div>}
+              <div className="row"><span>CoilLens (status views)</span><a className="mono" href={`${explorerAddr(COIL_LENS)}#code`} target="_blank" rel="noreferrer">{shortAddr(COIL_LENS)} ↗</a></div>
+              <div className="row"><span>v3 deploy transaction (block 16559650)</span><a className="mono" href={explorerTx(V3_DEPLOY_TX)} target="_blank" rel="noreferrer">{shortAddr(V3_DEPLOY_TX)} ↗</a></div>
+              <div className="row"><span>CoilRouter v2 (Wave 2, first release: first Guard fire)</span><a className="mono" href={`${explorerAddr(ROUTER_V2)}#code`} target="_blank" rel="noreferrer">{shortAddr(ROUTER_V2)} ↗</a></div>
+              <div className="row"><span>MUSD/BTC gauge incentives Coil pays into</span><a className="mono" href={explorerAddr(GAUGE_INCENTIVES)} target="_blank" rel="noreferrer">{shortAddr(GAUGE_INCENTIVES)} ↗</a></div>
               <div className="row"><span>v2 deploy transaction (block 16558220)</span><a className="mono" href={explorerTx(V2_DEPLOY_TX)} target="_blank" rel="noreferrer">{shortAddr(V2_DEPLOY_TX)} ↗</a></div>
               <div className="row"><span>CoilRouter v1 (Wave 1)</span><a className="mono" href={explorerAddr(ROUTER_V1)} target="_blank" rel="noreferrer">{shortAddr(ROUTER_V1)} ↗</a></div>
               <div className="row"><span>v1 deploy transaction</span><a className="mono" href={explorerTx(DEPLOY_TX)} target="_blank" rel="noreferrer">{shortAddr(DEPLOY_TX)} ↗</a></div>
@@ -68,7 +79,7 @@ export function ProofPage() {
         </section>
 
         <section className="panel" style={{ marginBottom: 24 }}>
-          <div className="panel__h"><h3>Every flow, run on-chain</h3><span className="mono muted">first occurrence on v2</span></div>
+          <div className="panel__h"><h3>Every flow, run on-chain</h3><span className="mono muted">first occurrence in Wave 2 (v2 or v3)</span></div>
           <div className="panel__b">
             <ol className="act act--steps">
               {MILESTONES.map((m) => {

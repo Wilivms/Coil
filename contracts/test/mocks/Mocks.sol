@@ -227,6 +227,26 @@ contract MockTroves {
     );
     bytes32 public constant CLOSE_TROVE_TYPEHASH =
         keccak256("CloseTrove(address borrower,address recipient,uint256 nonce,uint256 deadline)");
+    bytes32 public constant REFINANCE_TYPEHASH =
+        keccak256("Refinance(address borrower,uint16 interestRate,uint256 nonce,uint256 deadline)");
+    uint16 public constant INTEREST_RATE = 100;
+    uint256 public constant REFINANCE_FEE = 1e15; // 0.1% of the debt
+    mapping(address => uint256) public maxBorrowingCapacity;
+
+    function getTroveMaxBorrowingCapacity(address b) external view returns (uint256) {
+        return maxBorrowingCapacity[b];
+    }
+
+    /// Like MUSD: charges a fee on the debt and resets capacity to coll * price / MCR.
+    function refinanceWithSignature(address, address, address borrower, bytes memory signature, uint256 deadline) external {
+        _verify(REFINANCE_TYPEHASH, abi.encode(borrower, INTEREST_RATE), borrower, signature, deadline);
+        require(!recoveryMode, "BorrowerOps: Operation not permitted during Recovery Mode");
+        Trove storage t = troves[borrower];
+        require(t.status == 1, "BorrowerOps: Trove does not exist or is closed");
+        t.principal += ((t.principal + t.interest) * REFINANCE_FEE) / 1e18;
+        maxBorrowingCapacity[borrower] = (t.coll * priceFeed.fetchPrice()) / MCR;
+    }
+
     bytes32 public constant REPAY_MUSD_TYPEHASH =
         keccak256("RepayMUSD(uint256 amount,address borrower,uint256 nonce,uint256 deadline)");
     bytes32 private constant DOMAIN_TYPEHASH =
@@ -300,6 +320,7 @@ contract MockTroves {
         uint256 composite = debtAmount + fee + GAS_COMP;
         require(_icr(msg.value, composite) >= MCR, "BorrowerOps: An operation that would result in ICR < MCR is not permitted");
         troves[borrower] = Trove(msg.value, composite, 0, 1);
+        maxBorrowingCapacity[borrower] = (msg.value * priceFeed.fetchPrice()) / MCR;
         musd.mint(recipient, debtAmount);
     }
 
@@ -336,9 +357,20 @@ contract MockTroves {
             signature,
             deadline
         );
-        require(!isDebtIncrease && msg.value == 0, "mock: deleverage only");
         Trove storage t = troves[borrower];
         require(t.status == 1, "BorrowerOps: Trove does not exist or is closed");
+        if (isDebtIncrease) {
+            require(collWithdrawal == 0, "mock: leverage up adds collateral only");
+            require(!recoveryMode, "mock: no leverage up in Recovery Mode");
+            uint256 fee = (debtChange * BORROW_FEE) / 1e18;
+            t.coll += msg.value;
+            t.principal += debtChange + fee;
+            require(maxBorrowingCapacity[borrower] >= t.principal + t.interest, "BorrowerOps: An operation that exceeds maxBorrowingCapacity is not permitted");
+            require(_icr(t.coll, t.principal + t.interest) >= MCR, "BorrowerOps: An operation that would result in ICR < MCR is not permitted");
+            musd.mint(recipient, debtChange);
+            return;
+        }
+        require(msg.value == 0, "mock: deleverage takes no BTC");
         if (recoveryMode) require(collWithdrawal == 0, "BorrowerOps: Collateral withdrawal not permitted Recovery Mode");
         musd.burn(msg.sender, debtChange);
         // repay interest first, then principal (like MUSD)
@@ -346,6 +378,11 @@ contract MockTroves {
         t.interest -= fromInterest;
         t.principal -= debtChange - fromInterest;
         t.coll -= collWithdrawal;
+        if (collWithdrawal > 0) {
+            // like MUSD: a withdrawal can only lower the borrowing capacity
+            uint256 fresh = (t.coll * priceFeed.fetchPrice()) / MCR;
+            if (fresh < maxBorrowingCapacity[borrower]) maxBorrowingCapacity[borrower] = fresh;
+        }
         require(t.principal + t.interest - GAS_COMP >= MIN_NET_DEBT, "BorrowerOps: Trove's net debt must be greater than minimum");
         require(_icr(t.coll, t.principal + t.interest) >= MCR, "BorrowerOps: An operation that would result in ICR < MCR is not permitted");
         (bool ok,) = recipient.call{value: collWithdrawal}("");
@@ -406,9 +443,17 @@ contract MockTroves {
         pendingPrincipal[b] += amount;
     }
 
+    /// Test helper: a redemption of `musdAmount` against `b` (debt and collateral at the oracle price).
+    function redeem(address b, uint256 musdAmount) external {
+        Trove storage t = troves[b];
+        t.principal -= musdAmount;
+        t.coll -= (musdAmount * 1e18) / priceFeed.fetchPrice();
+    }
+
     /// Test helper: a trove that belongs to someone else, for the redemption queue.
     function setTrove(address b, uint256 coll, uint256 debt) external {
         troves[b] = Trove(coll, debt, 0, 1);
+        maxBorrowingCapacity[b] = (coll * priceFeed.fetchPrice()) / MCR;
     }
 
     // ---- SortedTroves (queue[0] is the tail: redeemed first)
@@ -444,5 +489,22 @@ contract MockTroves {
 
     function _icr(uint256 coll, uint256 debt) internal view returns (uint256) {
         return (coll * priceFeed.fetchPrice()) / debt;
+    }
+}
+
+/// Mezo Pools incentive contract (BribeVotingReward): pulls the reward token from the caller.
+contract MockReward {
+    MockMUSD public immutable musd;
+    uint256 public received;
+
+    constructor(MockMUSD m) {
+        musd = m;
+    }
+
+    function notifyRewardAmount(address token, uint256 amount) external {
+        require(token == address(musd), "token not whitelisted");
+        require(amount > 0, "ZeroAmount");
+        require(musd.transferFrom(msg.sender, address(this), amount), "transferFrom");
+        received += amount;
     }
 }

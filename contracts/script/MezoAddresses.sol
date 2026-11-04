@@ -12,6 +12,7 @@ abstract contract MezoAddresses {
         address sortedTroves;
         address hintHelpers;
         address savings; // MUSDSavingsRate (sMUSD)
+        address gaugeIncentives; // MUSD/BTC gauge incentive (bribe) contract, 0 if not set
         address pool; // MUSD/BTC volatile basic pool
         address musd;
         address btc;
@@ -27,6 +28,7 @@ abstract contract MezoAddresses {
             sortedTroves: 0x722E4D24FD6Ff8b0AC679450F3D91294607268fA,
             hintHelpers: 0x4e4cBA3779d56386ED43631b4dCD6d8EacEcBCF6,
             savings: 0x6f461c68B2c5492C0F5CCEc5a264d692aA7A8e16,
+            gaugeIncentives: 0x75b6B35Fc78826A0B7E1f9c08bb7d84bd70D0ee1, // PoolsVoter 0x263F…5F0D, gauge 0x72D8…Cd2c
             pool: 0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9,
             musd: 0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503,
             btc: 0x7b7C000000000000000000000000000000000000
@@ -41,6 +43,7 @@ abstract contract MezoAddresses {
             sortedTroves: 0x8C5DB4C62BF29c1C4564390d10c20a47E0b2749f,
             hintHelpers: 0xD267b3bE2514375A075fd03C3D9CBa6b95317DC3,
             savings: 0xb4D498029af77680cD1eF828b967f010d06C51CC,
+            gaugeIncentives: address(0),
             pool: 0x52e604c44417233b6CcEDDDc0d640A405Caacefb,
             musd: 0xdD468A1DDc392dcdbEf6db6e34E89AA338F9F186,
             btc: 0x7b7C000000000000000000000000000000000000

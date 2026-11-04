@@ -11,10 +11,11 @@ import {
     ITroveManager,
     IPriceFeed,
     ISortedTroves,
-    IMUSDSavingsRate
+    IMUSDSavingsRate,
+    IReward
 } from "./interfaces/IMezo.sol";
 
-/// @title CoilRouter v2
+/// @title CoilRouter v3
 /// @notice Leveraged BTC on Mezo in one transaction, without ever taking custody of the trove,
 ///         plus two protections that keep the position alive: Guard and Shield.
 ///
@@ -30,6 +31,12 @@ import {
 ///         Reserve:       MUSD the user parks in Mezo's sMUSD vault through Coil. It earns the sMUSD
 ///                        yield while it waits, and only two things can move it: its owner, or the
 ///                        owner's signed Shield repaying the owner's own trove.
+///         Relever:       the reverse of deleverage: flash BTC in, borrow more MUSD against it.
+///         Recoil:        a pre-signed relever a keeper runs once the trove's ratio is back above a
+///                        trigger (BTC went up, or a redemption shrank the debt): the position goes
+///                        back to its target leverage on its own.
+///         Incentives:    a capped share of each coil's MUSD goes to the MUSD/BTC pool's gauge
+///                        incentives, so the pool Coil trades against gets deeper.
 ///         Shield:        a pre-signed `repayMUSD` funded by the Reserve. It fires when the price falls
 ///                        to a trigger, or when the trove is about to be redeemed: less than
 ///                        `maxDebtAhead` MUSD of debt stands before it in the redemption queue. It only
@@ -54,6 +61,7 @@ contract CoilRouter is IPoolCallee {
     uint8 private constant CLOSE = 3;
     uint8 private constant DELEVER = 4;
     uint8 private constant RESERVE = 5;
+    uint8 private constant RELEVER = 6;
 
     /// MUSD gas compensation held in the GasPool for every trove (LiquityBase.MUSD_GAS_COMPENSATION).
     uint256 public constant GAS_COMPENSATION = 200e18;
@@ -64,6 +72,7 @@ contract CoilRouter is IPoolCallee {
     uint256 public constant MAX_FEE_BPS = 50; // 0.50% cap on the protocol fee
     uint256 public constant MAX_BOUNTY_BPS = 200; // 2.00% cap on a Guard keeper bounty
     uint256 public constant MAX_SHIELD_BOUNTY = 25e18; // 25 MUSD cap on a Shield keeper bounty
+    uint256 public constant MAX_INCENTIVE_BPS = 20; // 0.20% of a coil's debt to gauge incentives, at most
     /// Hard cap on how far a swap may price away from MUSD's PriceFeed (5%).
     uint256 public constant MAX_DEVIATION_BPS = 500;
     /// Upper bound on the redemption-queue walk done by `fireShield` and `debtAhead`.
@@ -93,6 +102,13 @@ contract CoilRouter is IPoolCallee {
 
     uint8 private _flow = IDLE;
 
+    /// Share (bps of the debt) of each coil's MUSD sent to the pool's gauge incentives.
+    uint16 public incentiveBps;
+    /// Mezo Pools incentive contract of the MUSD/BTC gauge.
+    address public incentiveTarget;
+    /// MUSD collected for incentives, waiting for `pushIncentives`.
+    uint256 public pendingIncentives;
+
     struct Guard {
         uint128 triggerPrice; // BTC/USD, 18 decimals
         uint128 collWithdrawal; // BTC the signed adjustment withdraws
@@ -114,7 +130,19 @@ contract CoilRouter is IPoolCallee {
         bytes signature; // EIP-712 RepayMUSD signature
     }
 
+    struct Recoil {
+        uint128 triggerIcr; // fire once the trove's ICR is at or above this (18 decimals)
+        uint128 addColl; // BTC flashed in as collateral, signed as `assetAmount`
+        uint128 debtIncrease; // MUSD borrowed, signed
+        uint64 deadline;
+        uint16 bountyBps; // share of `debtIncrease` paid to the keeper in MUSD
+        uint64 nonce;
+        bytes signature; // AdjustTrove(0, debtIncrease, true, addColl, borrower, recipient = this)
+        bytes refinanceSig; // optional Refinance signed one nonce earlier, to reset borrowing capacity
+    }
+
     mapping(address => Guard) private _guards;
+    mapping(address => Recoil) private _recoils;
     mapping(address => Shield) private _shields;
 
     /// MUSD each user holds in the Reserve, yield already settled into it.
@@ -170,6 +198,15 @@ contract CoilRouter is IPoolCallee {
         uint256 repaid,
         uint256 bounty
     );
+    event Relevered(address indexed user, uint256 collAdded, uint256 debtAdded, uint256 musdOut);
+    event RecoilArmed(
+        address indexed user, uint256 triggerIcr, uint256 addColl, uint256 debtIncrease, uint256 bountyBps, uint256 deadline
+    );
+    event RecoilDisarmed(address indexed user);
+    event RecoilFired(address indexed user, address indexed keeper, uint256 icr, uint256 musdToUser, uint256 bounty);
+    event IncentivesAccrued(address indexed user, uint256 amount);
+    event IncentivesPushed(address indexed target, uint256 amount);
+    event IncentivesChanged(address target, uint256 bps);
     event FeeChanged(uint256 feeBps);
     event MaxDeviationChanged(uint256 maxDeviationBps);
     event TreasuryChanged(address treasury);
@@ -246,7 +283,7 @@ contract CoilRouter is IPoolCallee {
 
     /// Collateral released by MUSD arrives here by native call. Accept it only mid-flow.
     receive() external payable {
-        if (_flow == IDLE || _flow == RESERVE) revert UnexpectedBtc();
+        if (_flow == IDLE || _flow == RESERVE || _flow == RELEVER) revert UnexpectedBtc();
     }
 
     // ---------------------------------------------------------------- coil (open)
@@ -276,12 +313,112 @@ contract CoilRouter is IPoolCallee {
 
         uint256 musdAfter = IERC20Min(musd).balanceOf(address(this));
         musdRefund = musdAfter - musdBefore;
+        uint256 incentive = (debtAmount * incentiveBps) / 10_000;
+        if (incentive > musdRefund) incentive = musdRefund;
+        if (incentive > 0) {
+            pendingIncentives += incentive;
+            musdRefund -= incentive;
+            emit IncentivesAccrued(msg.sender, incentive);
+        }
         if (musdRefund > 0) _sendToken(musd, msg.sender, musdRefund);
         if (fee > 0) _sendBtc(treasury, fee);
 
         emit Coiled(
-            msg.sender, deposit, totalColl, debtAmount, flashBtc, debtAmount - musdRefund, musdRefund
+            msg.sender, deposit, totalColl, debtAmount, flashBtc, debtAmount - musdRefund - incentive, musdRefund
         );
+    }
+
+    // ---------------------------------------------------------------- relever (leverage up)
+
+    /// @notice Add `addColl` BTC (flash-swapped from the pool) and borrow `debtIncrease` MUSD to pay
+    ///         for it, in one transaction. The MUSD left after paying the pool is sent to you.
+    /// @param signature    EIP-712 `AdjustTrove(0, debtIncrease, true, addColl, borrower=msg.sender, recipient=this, nonce, deadline)`.
+    /// @param refinanceSig Optional `Refinance(borrower, interestRate, nonce, deadline)` signed one nonce
+    ///                     BEFORE `signature`: MUSD's borrowing capacity only resets on refinance.
+    function relever(
+        uint256 addColl,
+        uint256 debtIncrease,
+        address upperHint,
+        address lowerHint,
+        bytes calldata signature,
+        bytes calldata refinanceSig,
+        uint256 deadline,
+        uint256 minMusdOut
+    ) external lock(RELEVER) returns (uint256 musdOut) {
+        musdOut = _relever(msg.sender, addColl, debtIncrease, upperHint, lowerHint, signature, refinanceSig, deadline);
+        if (musdOut < minMusdOut) revert Slippage(musdOut, minMusdOut);
+        if (musdOut > 0) _sendToken(musd, msg.sender, musdOut);
+        emit Relevered(msg.sender, addColl, debtIncrease, musdOut);
+    }
+
+    // ---------------------------------------------------------------- recoil (signed re-leverage)
+
+    /// @notice Store a pre-signed relever that a keeper may run once the trove's ratio is at or
+    ///         above `triggerIcr`: after BTC rises, or after a redemption shrank the debt.
+    function armRecoil(
+        uint128 triggerIcr,
+        uint128 addColl,
+        uint128 debtIncrease,
+        uint16 bountyBps,
+        uint64 deadline,
+        bytes calldata signature,
+        bytes calldata refinanceSig
+    ) external {
+        if (bountyBps > MAX_BOUNTY_BPS || deadline <= block.timestamp || triggerIcr < MCR) revert BadParam();
+        if (addColl == 0 || debtIncrease == 0 || signature.length == 0) revert BadParam();
+        _recoils[msg.sender] = Recoil({
+            triggerIcr: triggerIcr,
+            addColl: addColl,
+            debtIncrease: debtIncrease,
+            deadline: deadline,
+            bountyBps: bountyBps,
+            nonce: uint64(bos.getNonce(msg.sender)),
+            signature: signature,
+            refinanceSig: refinanceSig
+        });
+        emit RecoilArmed(msg.sender, triggerIcr, addColl, debtIncrease, bountyBps, deadline);
+    }
+
+    function disarmRecoil() external {
+        delete _recoils[msg.sender];
+        emit RecoilDisarmed(msg.sender);
+    }
+
+    /// @notice Execute `user`'s Recoil. Pays the caller `bountyBps` of the MUSD borrowed.
+    function fireRecoil(address user, address upperHint, address lowerHint)
+        external
+        lock(RELEVER)
+        returns (uint256 bounty)
+    {
+        Recoil memory r = _recoils[user];
+        if (r.signature.length == 0) revert NoGuard();
+        if (block.timestamp > r.deadline) revert GuardExpired();
+        uint256 icr = troveManager.getCurrentICR(user, priceFeed.fetchPrice());
+        if (icr < r.triggerIcr) revert NotTriggered(icr, r.triggerIcr);
+        delete _recoils[user];
+
+        uint256 musdOut =
+            _relever(user, r.addColl, r.debtIncrease, upperHint, lowerHint, r.signature, r.refinanceSig, r.deadline);
+        bounty = (uint256(r.debtIncrease) * r.bountyBps) / 10_000;
+        if (bounty > musdOut) revert Slippage(musdOut, bounty);
+        if (bounty > 0) _sendToken(musd, msg.sender, bounty);
+        if (musdOut > bounty) _sendToken(musd, user, musdOut - bounty);
+
+        emit Relevered(user, r.addColl, r.debtIncrease, musdOut);
+        emit RecoilFired(user, msg.sender, icr, musdOut - bounty, bounty);
+    }
+
+    // ---------------------------------------------------------------- gauge incentives
+
+    /// @notice Send the collected MUSD to the MUSD/BTC gauge's incentives. Anyone can call.
+    function pushIncentives() external lock(RESERVE) returns (uint256 amount) {
+        amount = pendingIncentives;
+        address target = incentiveTarget;
+        if (amount == 0 || target == address(0)) return 0;
+        pendingIncentives = 0;
+        IERC20Approve(musd).approve(target, amount);
+        IReward(target).notifyRewardAmount(musd, amount);
+        emit IncentivesPushed(target, amount);
     }
 
     // ---------------------------------------------------------------- unwind (close)
@@ -497,14 +634,32 @@ contract CoilRouter is IPoolCallee {
     /// @inheritdoc IPoolCallee
     function hook(address sender, uint256 amount0, uint256 amount1, bytes calldata data) external {
         if (msg.sender != address(pool) || sender != address(this)) revert Unauthorized();
-        if (_flow != OPEN && _flow != CLOSE && _flow != DELEVER) revert Unauthorized();
+        if (_flow != OPEN && _flow != CLOSE && _flow != DELEVER && _flow != RELEVER) revert Unauthorized();
         (uint8 op, bytes memory inner) = abi.decode(data, (uint8, bytes));
         if (op != _flow) revert Unauthorized();
 
         (uint256 rMusd, uint256 rBtc) = _reserves();
         uint256 price = priceFeed.fetchPrice();
 
-        if (op == OPEN) {
+        if (op == RELEVER) {
+            (
+                address user,
+                uint256 addColl,
+                uint256 debtIncrease,
+                address upperHint,
+                address lowerHint,
+                uint256 deadline,
+                bytes memory signature
+            ) = abi.decode(inner, (address, uint256, uint256, address, address, uint256, bytes));
+            bos.adjustTroveWithSignature{value: addColl}(
+                0, debtIncrease, true, upperHint, lowerHint, user, address(this), signature, deadline
+            );
+            uint256 flashBtc = musdIsToken0 ? amount1 : amount0;
+            uint256 musdIn = _amountIn(flashBtc, rMusd, rBtc);
+            if (musdIn > debtIncrease) revert DebtTooSmall(debtIncrease, musdIn);
+            _checkDeviation(musdIn, (flashBtc * price) / 1e18);
+            _sendToken(musd, address(pool), musdIn);
+        } else if (op == OPEN) {
             (
                 address user,
                 uint256 totalColl,
@@ -574,59 +729,12 @@ contract CoilRouter is IPoolCallee {
         return _guards[user];
     }
 
+    function recoilOf(address user) external view returns (Recoil memory) {
+        return _recoils[user];
+    }
+
     function shieldOf(address user) external view returns (Shield memory) {
         return _shields[user];
-    }
-
-    /// @return armed        a Guard is stored for `user`
-    /// @return fresh        its signature still matches the user's current MUSD nonce and deadline
-    /// @return triggered    MUSD's price feed is at or below the trigger right now
-    /// @return recoveryMode MUSD is in Recovery Mode: collateral can't be withdrawn, so a Guard can't
-    ///                      fire and only a Shield (repay from the Reserve) can protect the trove
-    function guardStatus(address user)
-        external
-        view
-        returns (bool armed, bool fresh, bool triggered, bool recoveryMode)
-    {
-        uint256 price = priceFeed.fetchPrice();
-        recoveryMode = troveManager.checkRecoveryMode(price);
-        Guard storage g = _guards[user];
-        armed = g.signature.length != 0;
-        if (!armed) return (false, false, false, recoveryMode);
-        fresh = g.nonce == bos.getNonce(user) && block.timestamp <= g.deadline;
-        triggered = price <= g.triggerPrice;
-    }
-
-    /// @return armed     a Shield is stored for `user`
-    /// @return fresh     its signature still matches the MUSD nonce and deadline
-    /// @return funded    the Reserve covers the repayment and the bounty
-    /// @return byPrice   the price trigger is met
-    /// @return byQueue   the redemption trigger is met (proved within `maxSteps`)
-    /// @return ahead     MUSD of redeemable debt ahead of the trove (lower bound if not found)
-    function shieldStatus(address user, uint256 maxSteps)
-        external
-        view
-        returns (bool armed, bool fresh, bool funded, bool byPrice, bool byQueue, uint256 ahead)
-    {
-        Shield storage s = _shields[user];
-        armed = s.signature.length != 0;
-        if (!armed) return (false, false, false, false, false, 0);
-        fresh = s.nonce == bos.getNonce(user) && block.timestamp <= s.deadline;
-        funded = reserveBalance(user) >= uint256(s.repayAmount) + s.bountyMusd;
-        uint256 price = priceFeed.fetchPrice();
-        byPrice = s.triggerPrice != 0 && price <= s.triggerPrice;
-        if (s.maxDebtAhead != 0) {
-            bool found;
-            (ahead, found) = _debtAhead(user, type(uint256).max, maxSteps, price);
-            byQueue = found && ahead <= s.maxDebtAhead;
-        }
-    }
-
-    /// @notice MUSD of debt that redemptions would take before reaching `user`'s trove.
-    /// @return ahead redeemable debt (net of gas compensation) standing before the trove
-    /// @return found the walk reached the trove within `maxSteps`
-    function debtAhead(address user, uint256 maxSteps) external view returns (uint256 ahead, bool found) {
-        return _debtAhead(user, type(uint256).max, maxSteps, priceFeed.fetchPrice());
     }
 
     /// Reserve balance including yield not yet settled.
@@ -634,12 +742,6 @@ contract CoilRouter is IPoolCallee {
         uint256 r = reserveOf[user];
         uint256 accrued = (r * accYieldPerShare) / 1e18;
         return accrued > _yieldDebt[user] ? r + accrued - _yieldDebt[user] : r;
-    }
-
-    /// Reserves as (MUSD, BTC) and the pool fee in bps.
-    function poolState() external view returns (uint256 reserveMusd, uint256 reserveBtc, uint256 feeBps_) {
-        (reserveMusd, reserveBtc) = _reserves();
-        feeBps_ = poolFactory.getFee(address(pool), false);
     }
 
     // ---------------------------------------------------------------- admin
@@ -654,6 +756,14 @@ contract CoilRouter is IPoolCallee {
         if (_bps == 0 || _bps > MAX_DEVIATION_BPS) revert BadParam();
         maxDeviationBps = _bps;
         emit MaxDeviationChanged(_bps);
+    }
+
+    /// Point incentives at the MUSD/BTC gauge's incentive contract and set the share (capped).
+    function setIncentives(address target, uint16 bps) external onlyOwner {
+        if (bps > MAX_INCENTIVE_BPS || (bps > 0 && target == address(0))) revert BadParam();
+        incentiveTarget = target;
+        incentiveBps = bps;
+        emit IncentivesChanged(target, bps);
     }
 
     function setTreasury(address _treasury) external onlyOwner {
@@ -684,6 +794,23 @@ contract CoilRouter is IPoolCallee {
             abi.encode(user, collWithdrawal, debtRepay, upperHint, lowerHint, deadline, signature);
         _flash(true, debtRepay, abi.encode(DELEVER, inner));
         btcOut = address(this).balance - btcBefore;
+    }
+
+    function _relever(
+        address user,
+        uint256 addColl,
+        uint256 debtIncrease,
+        address upperHint,
+        address lowerHint,
+        bytes memory signature,
+        bytes memory refinanceSig,
+        uint256 deadline
+    ) internal returns (uint256 musdOut) {
+        if (refinanceSig.length != 0) bos.refinanceWithSignature(upperHint, lowerHint, user, refinanceSig, deadline);
+        uint256 musdBefore = IERC20Min(musd).balanceOf(address(this));
+        bytes memory inner = abi.encode(user, addColl, debtIncrease, upperHint, lowerHint, deadline, signature);
+        _flash(false, addColl, abi.encode(RELEVER, inner));
+        musdOut = IERC20Min(musd).balanceOf(address(this)) - musdBefore;
     }
 
     /// Flash-swap `amount` of MUSD (`outMusd`) or BTC out of the pool to this contract.

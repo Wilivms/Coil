@@ -1,6 +1,6 @@
 # Coil threat model
 
-Scope: `contracts/src/CoilRouter.sol` (v2, Wave 2), the app's signing code (`app/src/lib/signing.ts`) and the keeper (`keeper/guard-keeper.mjs`).
+Scope: `contracts/src/CoilRouter.sol` (v3, Wave 2) and `CoilLens.sol` (read-only), the app's signing code (`app/src/lib/signing.ts`) and the keeper (`keeper/guard-keeper.mjs`).
 Each rule below names the test that enforces it. Run them all with `cd contracts && forge test` (fork tests: add `--match-path "test/fork/*" --fork-url https://rpc.test.mezo.org`).
 
 ## What Coil holds, and what it never holds
@@ -9,8 +9,9 @@ Each rule below names the test that enforces it. Run them all with `cd contracts
 |---|---|---|
 | The trove (BTC collateral, MUSD debt) | MUSD's own contracts, in the **user's** name | The user, or Coil only with an exact EIP-712 signature from the user |
 | BTC during a coil, unwind or deleverage | CoilRouter, for the length of one transaction | Nobody after the transaction: the router ends every flow with 0 BTC |
+| Gauge incentives (MUSD) | CoilRouter, until anyone calls `pushIncentives` | Only the MUSD/BTC gauge incentive contract set by the owner (share capped at 0.20% of a coil's debt) |
 | Reserve MUSD | Mezo's sMUSD vault, held by CoilRouter, credited per user | The user (`withdrawReserve`), or the user's own signed Shield, only to repay the user's own trove |
-| Signed Guard / Shield | CoilRouter storage | A keeper can execute it only when the on-chain condition holds; the user can delete it any time |
+| Signed Guard / Shield / Recoil | CoilRouter storage | A keeper can execute it only when the on-chain condition holds; the user can delete it any time |
 
 Coil has **no** forwarder or meta-transaction path, **no** proxy or upgrade, **no** admin function that can touch a trove, a signature or the Reserve. The October 5, 2026 veBTC exploit came through a meta-transaction forwarder; there is nothing equivalent here (`grep -rn "forwarder\|_msgSender\|delegatecall" contracts/src` only matches the NatSpec line that says so).
 
@@ -45,10 +46,10 @@ Coil never builds a signature; MUSD's BorrowerOperationsSignatures verifies borr
 - `test_coil_revertsOnWrongSigner`, `test_guard_staleAfterOtherTroveOp`, `test_shield_staleAfterSignedOp`
 - `SignatureCompat.t.sol`: the app's viem digests equal MUSD's for OpenTrove, AdjustTrove, CloseTrove and RepayMUSD
 
-### R5. Coil never ends a transaction holding BTC or loose MUSD
+### R5. Coil never ends a transaction holding BTC, and holds MUSD only for the gauge
 BTC is accepted only mid-flow (`receive()` reverts otherwise), so a signature replayed straight against MUSD with Coil as recipient can't strand funds.
 - `test_signatureUsedDirectlyCannotStrandBtc`, `test_reserve_rejectsBtc`
-- `invariant_routerHoldsNoBtc`, `invariant_routerHoldsNoLooseMusd`
+- `invariant_routerHoldsNoBtc`, `invariant_routerHoldsOnlyPendingIncentives` (MUSD balance == pending incentives)
 
 ### R6. Coil never owns a trove
 - `test_coil_opensTroveOwnedByUser`, `invariant_routerOwnsNoTrove`
@@ -71,7 +72,19 @@ MUSD's `getEntireDebtAndColl` already folds pending redistributions into `coll`,
 A single lock covers coil, unwind, deleverage, Guard, Reserve and Shield; the pool callback only runs inside a Coil-initiated swap.
 - `test_hookOnlyFromPoolDuringFlow`, `invariant_flowLockReleased`
 
+### R11. Leverage goes up only as signed, within MUSD's capacity
+Relever and Recoil add exactly the signed collateral and debt; every swap keeps the PriceFeed bound; MUSD enforces its borrowing capacity, which only a signed refinance (one nonce earlier, same transaction) can reset. A Recoil fires only when the trove's ratio is at or above its trigger.
+- `test_relever_addsCollateralAndDebtInOneTx`, `test_relever_sandwichedPoolReverts`, `test_relever_blockedByShrunkCapacity`, `test_relever_withRefinanceResetsCapacity`
+- `test_recoil_firesWhenRatioClimbsBack`, `test_recoil_restoresLeverageAfterRedemption`, `test_recoil_staleAfterSignedOp`, `test_recoil_rejectsBadParams`
+- `test_fork_refinanceThenReleverOnRealMezo` (real Refinance + AdjustTrove signatures on consecutive nonces)
+
+### R12. Incentives can only go to the gauge, capped
+`incentiveBps` ≤ 20 (0.20% of debt), target set by the owner; `pushIncentives` is permissionless and only calls `notifyRewardAmount(MUSD, amount)` on that target.
+- `test_incentives_accrueOnCoilAndPushToGauge`, `test_incentives_cappedAndOwnerOnly`, `test_fork_incentivesReachRealGauge`
+
 ## Known limits (accepted)
+
+- **One signed protection fires at a time.** Guard, Shield and Recoil are signed at the same MUSD nonce, so the first one that fires makes the others stale. The app shows it and asks to sign again; the status views report `fresh = false`.
 
 - **Tolerance window.** Inside the oracle tolerance, a sandwich can still take up to `maxDeviationBps` minus fees and impact. The user's own limits (`debtAmount` on coil, `minBtcOut` on unwind, deleverage and Guard) narrow it further.
 - **Fixed-amount signatures.** MUSD signs exact amounts, so a Guard/Shield repays what was signed even if the trove changed through unsigned operations (interest, redistribution). Status views and the app show the sizes before arming.

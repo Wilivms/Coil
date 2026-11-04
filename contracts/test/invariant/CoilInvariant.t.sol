@@ -3,7 +3,7 @@ pragma solidity 0.8.24;
 
 import {CoilBase} from "../CoilRouter.t.sol";
 import {CoilRouter} from "../../src/CoilRouter.sol";
-import {MockBTCPrecompile, MockMUSD, MockPool, MockPriceFeed, MockTroves, MockSavings} from "../mocks/Mocks.sol";
+import {MockBTCPrecompile, MockMUSD, MockPool, MockPriceFeed, MockTroves, MockSavings, MockReward} from "../mocks/Mocks.sol";
 import {Test, console2} from "forge-std/Test.sol";
 
 /// Drives random sequences of every Coil flow, market moves, yield and adversarial pool swaps.
@@ -267,6 +267,63 @@ contract CoilHandler is Test {
         this.doFireGuard(i);
     }
 
+    function relever(uint256 a, uint256 add) external {
+        _run("relever", abi.encodeCall(this.doRelever, (a % 3, bound(add, 0.05e18, 1e18))));
+    }
+
+    function doRelever(uint256 i, uint256 add) external self {
+        uint256 debt = (router.quoteMusdForBtc(add) * 1005) / 1000;
+        uint256 dl = block.timestamp + 1 hours;
+        bytes memory sig = _sig(
+            i, troves.ADJUST_TROVE_TYPEHASH(), abi.encode(uint256(0), debt, true, add, actors[i], address(router)), dl
+        );
+        vm.prank(actors[i]);
+        router.relever(add, debt, address(0), address(0), sig, "", dl, 0);
+    }
+
+    function armRecoil(uint256 a, uint256 add, uint256 trig) external {
+        _run("armRecoil", abi.encodeCall(this.doArmRecoil, (a % 3, bound(add, 0.05e18, 1e18), bound(trig, 1.2e18, 3e18))));
+    }
+
+    function doArmRecoil(uint256 i, uint256 add, uint256 trig) external self {
+        uint256 debt = (router.quoteMusdForBtc(add) * 130) / 100;
+        uint64 dl = uint64(block.timestamp + 30 days);
+        bytes memory sig = _sig(
+            i, troves.ADJUST_TROVE_TYPEHASH(), abi.encode(uint256(0), debt, true, add, actors[i], address(router)), dl
+        );
+        vm.prank(actors[i]);
+        router.armRecoil(uint128(trig), uint128(add), uint128(debt), 30, dl, sig, "");
+    }
+
+    function fireRecoil(uint256 a) external {
+        _run("fireRecoil", abi.encodeCall(this.doFireRecoil, (a % 3)));
+    }
+
+    function doFireRecoil(uint256 i) external self {
+        vm.prank(keeper);
+        router.fireRecoil(actors[i], address(0), address(0));
+    }
+
+    /// Coil if needed, arm a Recoil the trove already qualifies for, and have the keeper fire it.
+    function recoilCycle(uint256 a, uint256 add) external {
+        _run("recoilCycle", abi.encodeCall(this.doRecoilCycle, (a % 3, bound(add, 0.02e18, 0.2e18))));
+    }
+
+    function doRecoilCycle(uint256 i, uint256 add) external self {
+        this.doArb();
+        if (troves.getTroveStatus(actors[i]) != 1) this.doCoil(i, 1e18, 2e18);
+        this.doArmRecoil(i, add, 1.15e18);
+        this.doFireRecoil(i);
+    }
+
+    function pushIncentives() external {
+        _run("push", abi.encodeCall(this.doPush, ()));
+    }
+
+    function doPush() external self {
+        router.pushIncentives();
+    }
+
     /// Arbitrage closes any gap: the oracle catches up with the pool.
     function arbitrage() external {
         _run("arb", abi.encodeCall(this.doArb, ()));
@@ -297,12 +354,13 @@ contract CoilInvariantTest is CoilBase {
 
     function setUp() public {
         _deploy(true);
+        router.setIncentives(address(new MockReward(musd)), 5);
         handler = new CoilHandler(router, troves, musd, pool, feed, savings);
         // the handler mints test MUSD through the troves mock and moves the BTC emulator
         vm.allowCheatcodes(address(handler));
         targetContract(address(handler));
         // only the fuzzed entry points; the do* bodies are internal steps run under a snapshot
-        bytes4[] memory sel = new bytes4[](19);
+        bytes4[] memory sel = new bytes4[](24);
         sel[0] = CoilHandler.coil.selector;
         sel[1] = CoilHandler.unwind.selector;
         sel[2] = CoilHandler.deleverage.selector;
@@ -322,6 +380,11 @@ contract CoilInvariantTest is CoilBase {
         sel[16] = CoilHandler.arbitrage.selector;
         sel[17] = CoilHandler.lifecycle.selector;
         sel[18] = CoilHandler.lifecycle.selector;
+        sel[19] = CoilHandler.relever.selector;
+        sel[20] = CoilHandler.armRecoil.selector;
+        sel[21] = CoilHandler.fireRecoil.selector;
+        sel[22] = CoilHandler.pushIncentives.selector;
+        sel[23] = CoilHandler.recoilCycle.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
     }
 
@@ -330,9 +393,10 @@ contract CoilInvariantTest is CoilBase {
         assertEq(address(router).balance, 0);
     }
 
-    /// Loose MUSD never sits in the router: Reserve MUSD lives in sMUSD.
-    function invariant_routerHoldsNoLooseMusd() public view {
-        assertEq(musd.balanceOf(address(router)), 0);
+    /// The only MUSD the router holds is gauge incentives waiting for `pushIncentives`:
+    /// Reserve MUSD lives in sMUSD, and every flow pays out what it borrowed.
+    function invariant_routerHoldsOnlyPendingIncentives() public view {
+        assertEq(musd.balanceOf(address(router)), router.pendingIncentives());
     }
 
     /// The Reserve is fully backed: sMUSD held >= every user's balance, yield included.
@@ -369,8 +433,8 @@ contract CoilInvariantTest is CoilBase {
     /// Prints how many of each flow succeeded in the run (forge test -vv), so the report shows the
     /// invariants held across real coils, fires and reserve moves, not only reverted attempts.
     function afterInvariant() external view {
-        string[15] memory n = ["coil","unwind","deleverage","armGuard","fireGuard","depositReserve","withdrawReserve","yield","armShield","fireShield","market","attack","pending","arb","lifecycle"];
-        for (uint256 i; i < 15; ++i) {
+        string[20] memory n = ["coil","unwind","deleverage","armGuard","fireGuard","depositReserve","withdrawReserve","yield","armShield","fireShield","market","attack","pending","arb","lifecycle","relever","armRecoil","fireRecoil","push","recoilCycle"];
+        for (uint256 i; i < 20; ++i) {
             bytes32 k = bytes32(bytes(n[i]));
             console2.log(n[i], handler.ok(k), "/", handler.calls(k));
         }

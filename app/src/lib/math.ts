@@ -178,3 +178,32 @@ export function planShield(t: Trove, share: number, trigger: number, minNetDebt 
 
 /** Value of the position in BTC terms if closed at oracle price `p` (ignores pool impact). */
 export const equityUsd = (collBtc: number, debt: number, p: number) => collBtc * p - debt
+
+export type ReleverPlan = { addColl: bigint; debtIncrease: bigint; crAfter: number; ok: boolean; reason?: string }
+
+/**
+ * Lever a trove up to `targetLev`: add BTC from the pool and borrow the MUSD that pays for it.
+ * `margin` oversizes the MUSD (any surplus comes back to the user) for a pool that moved by the
+ * time a keeper runs it.
+ */
+export function releverPlan(m: Market, t: { coll: bigint; debt: bigint }, targetLev: number, margin = 1.005): ReleverPlan {
+  const p = fromWad(m.price)
+  const C = fromWad(t.coll)
+  const D = fromWad(t.debt)
+  const equity = C * p - D
+  const none = { addColl: 0n, debtIncrease: 0n, crAfter: (C * p) / D }
+  if (equity <= 0) return { ...none, ok: false, reason: 'No equity left in this trove' }
+  const addUsd = targetLev * equity - C * p
+  if (addUsd <= 0) return { ...none, ok: false, reason: 'Already at or above that leverage' }
+  const add = addUsd / p
+  let musdIn: bigint
+  try {
+    musdIn = amountIn(toWad(add), m.reserveMusd, m.reserveBtc, m.feeBps)
+  } catch {
+    return { ...none, ok: false, reason: 'Not enough liquidity in the pool' }
+  }
+  const debtIncrease = (musdIn * BigInt(Math.round(margin * 10_000))) / 10_000n
+  const crAfter = ((C + add) * p) / (D + fromWad(debtIncrease) * 1.001)
+  if (crAfter < SAFE_OPEN_CR) return { ...none, ok: false, reason: `The ratio would fall under ${Math.round(SAFE_OPEN_CR * 100)}%` }
+  return { addColl: toWad(add), debtIncrease, crAfter, ok: true }
+}

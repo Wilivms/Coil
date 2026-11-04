@@ -32,9 +32,17 @@ export const ADDR = {
 export const ROUTER_V1 = '0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16' as Address
 export const ROUTER_V1_BLOCK = 16_188_308n
 
-/** CoilRouter v2 (Wave 2), deployed 4 Nov 2026 at block 16558220, source-verified. VITE_COIL_ROUTER overrides it. */
-const DEPLOYED_ROUTER: string = '0xA9aDbE2e3DDFbD3795Add019c8EA64a950777a92'
+/** CoilRouter v2 (Wave 2, first half), deployed 4 Nov 2026 at block 16558220. Kept for its history (first Guard fire). */
+export const ROUTER_V2 = '0xA9aDbE2e3DDFbD3795Add019c8EA64a950777a92' as Address
 export const ROUTER_V2_BLOCK = 16_558_220n
+
+/** CoilRouter v3 (Wave 2): relever, Recoil, gauge incentives. Source-verified. VITE_COIL_ROUTER overrides it. */
+const DEPLOYED_ROUTER: string = '0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4'
+export const ROUTER_V3_BLOCK = 16_559_650n
+/** CoilLens: read-only status views for the router (verified). */
+export const COIL_LENS = getAddress('0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353'.toLowerCase())
+/** MUSD/BTC gauge incentive contract that receives Coil's incentives (PoolsVoter 0x263F…5F0D). */
+export const GAUGE_INCENTIVES = '0x75b6B35Fc78826A0B7E1f9c08bb7d84bd70D0ee1' as Address
 const envRouter = (import.meta.env.VITE_COIL_ROUTER ?? '').trim() || DEPLOYED_ROUTER
 // getAddress on the lowercased value: a mistyped checksum can never break the app again
 export const COIL_ROUTER: Address | null = /^0x[0-9a-fA-F]{40}$/.test(envRouter) ? getAddress(envRouter.toLowerCase()) : null

@@ -3,9 +3,9 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAccount, useSwitchChain, useWalletClient } from 'wagmi'
 import { zeroAddress, type Address, type Hash } from 'viem'
 import { ADDR, COIL_ROUTER, mezoTestnet } from './chain'
-import { borrowerOpsAbi, bosAbi, coilRouterAbi, erc20Abi, hintHelpersAbi, sortedTrovesAbi } from './abis'
+import { borrowerOpsAbi, bosAbi, coilRouterAbi, erc20Abi, hintHelpersAbi, interestRateManagerAbi, maxCapacityAbi, sortedTrovesAbi, troveManagerAbi } from './abis'
 import { client } from './live'
-import { adjustTroveTypedData, closeTroveTypedData, deadlineIn, openTroveTypedData, repayTypedData } from './signing'
+import { adjustTroveTypedData, closeTroveTypedData, deadlineIn, openTroveTypedData, refinanceTypedData, repayTypedData } from './signing'
 import type { GuardPlan, OpenPlan } from './math'
 import { toWad } from './math'
 import { explainError, useToast } from '../components/Toasts'
@@ -53,7 +53,7 @@ export function useCoilActions() {
       if (receipt.status !== 'success') throw new Error('Transaction reverted')
       setStep('done')
       toast.push({ kind: 'ok', title: success, tx: hash })
-      await Promise.all(['trove', 'guard', 'market', 'radar', 'activity', 'reserve', 'shield', 'surplus'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
+      await Promise.all(['trove', 'guard', 'market', 'radar', 'activity', 'reserve', 'shield', 'surplus', 'recoil'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
     } catch (e) {
       setStep('idle')
       toast.push({ kind: 'err', title: `${label} failed`, body: explainError(e) })
@@ -71,10 +71,73 @@ export function useCoilActions() {
     return fee === 0n ? deposit : (deposit * 10_000n + (10_000n - fee - 1n)) / (10_000n - fee)
   }
 
+  /**
+   * Signatures for a leverage-up: the AdjustTrove (debt increase, collateral in) and, when MUSD's
+   * borrowing capacity is too small, a Refinance signed one nonce earlier that resets it.
+   */
+  async function releverSigs(user: Address, addColl: bigint, debtIncrease: bigint, deadline: bigint) {
+    const [nonce, dc, cap] = await Promise.all([
+      nonceOf(user),
+      client.readContract({ address: ADDR.troveManager, abi: troveManagerAbi, functionName: 'getEntireDebtAndColl', args: [user] }),
+      client.readContract({ address: ADDR.troveManager, abi: maxCapacityAbi, functionName: 'getTroveMaxBorrowingCapacity', args: [user] }),
+    ])
+    const debtAfter = dc[1] + dc[2] + (debtIncrease * 1001n) / 1000n
+    let refinanceSig: `0x${string}` = '0x'
+    let n = nonce
+    if (debtAfter > cap) {
+      const rate = await client.readContract({ address: ADDR.interestRateManager, abi: interestRateManagerAbi, functionName: 'interestRate' })
+      refinanceSig = await wallet!.signTypedData({
+        account: user, ...refinanceTypedData({ borrower: user, interestRate: Number(rate), nonce: n, deadline }),
+      })
+      n += 1n
+    }
+    const signature = await wallet!.signTypedData({
+      account: user,
+      ...adjustTroveTypedData({
+        collWithdrawal: 0n, debtChange: debtIncrease, isDebtIncrease: true, assetAmount: addColl, borrower: user,
+        recipient: COIL_ROUTER!, nonce: n, deadline,
+      }),
+    })
+    return { signature, refinanceSig, collAfter: dc[0] + addColl, debtAfter }
+  }
+
   return {
     ready,
     step,
     busy,
+
+    relever: (addColl: bigint, debtIncrease: bigint) =>
+      run('Leverage up', async (user) => {
+        setStep('sign')
+        const deadline = deadlineIn(20 * 60)
+        const { signature, refinanceSig, collAfter, debtAfter } = await releverSigs(user, addColl, debtIncrease, deadline)
+        const [upper, lower] = await insertHints(collAfter, debtAfter)
+        setStep('send')
+        return wallet!.writeContract({
+          account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'relever',
+          args: [addColl, debtIncrease, upper, lower, signature, refinanceSig, deadline, 0n],
+        })
+      }, 'Leverage increased'),
+
+    armRecoil: (triggerIcr: number, addColl: bigint, debtIncrease: bigint, days: number) =>
+      run('Arm Recoil', async (user) => {
+        setStep('sign')
+        const deadline = deadlineIn(days * 86_400)
+        const { signature, refinanceSig } = await releverSigs(user, addColl, debtIncrease, deadline)
+        setStep('send')
+        return wallet!.writeContract({
+          account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'armRecoil',
+          args: [toWad(triggerIcr), addColl, debtIncrease, 30, deadline, signature, refinanceSig],
+        })
+      }, 'Recoil armed'),
+
+    disarmRecoil: () =>
+      run('Disarm Recoil', async (user) => {
+        setStep('send')
+        return wallet!.writeContract({
+          account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'disarmRecoil',
+        })
+      }, 'Recoil disarmed'),
 
     coil: (plan: OpenPlan) =>
       run('Coil', async (user) => {

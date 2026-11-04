@@ -99,4 +99,21 @@ export function repayTypedData(p: { amount: bigint; borrower: Address; nonce: bi
   }
 }
 
+/** MUSD's Refinance: re-prices the trove at the current rate and resets its borrowing capacity. */
+export function refinanceTypedData(p: { borrower: Address; interestRate: number; nonce: bigint; deadline: bigint }) {
+  return {
+    domain,
+    primaryType: 'Refinance' as const,
+    types: {
+      Refinance: [
+        { name: 'borrower', type: 'address' },
+        { name: 'interestRate', type: 'uint16' },
+        { name: 'nonce', type: 'uint256' },
+        { name: 'deadline', type: 'uint256' },
+      ],
+    },
+    message: p,
+  }
+}
+
 export const deadlineIn = (seconds: number) => BigInt(Math.floor(Date.now() / 1000) + seconds)

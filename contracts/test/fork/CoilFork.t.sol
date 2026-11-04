@@ -3,6 +3,7 @@ pragma solidity 0.8.24;
 
 import {Test, console2} from "forge-std/Test.sol";
 import {CoilRouter} from "../../src/CoilRouter.sol";
+import {CoilLens} from "../../src/CoilLens.sol";
 import {MezoAddresses} from "../../script/MezoAddresses.sol";
 import {MockBTCPrecompile} from "../mocks/Mocks.sol";
 
@@ -186,13 +187,77 @@ contract CoilForkTest is Test, MezoAddresses {
     /// Walk the REAL redemption queue (300+ troves) up to a fresh Coil trove.
     function test_fork_debtAheadOnRealQueue() public {
         _coilFork(0.05e18, 0.15e18);
-        (uint256 ahead, bool found) = router.debtAhead(user, 200);
+        (uint256 ahead, bool found) = new CoilLens(router).debtAhead(user, 200);
         console2.log("found in first 200 of the queue", found);
         console2.log("redeemable MUSD ahead of the new trove", ahead / 1e18);
         // A fresh 3x trove (~170% ICR) on testnet sits deep in the queue; at least the walk must
         // not revert and must report a lower bound when it stops early.
         assertTrue(found || ahead > 0);
     }
+
+    // ---------------------------------------------------------------- Wave 2, v3
+
+    function _signAtNonce(bytes32 typeHash, bytes memory data, uint256 nonce, uint256 deadline) internal view returns (bytes memory) {
+        bytes32 structHash = keccak256(abi.encodePacked(typeHash, data, nonce, deadline));
+        bytes32 domain = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256("BorrowerOperationsSignatures"),
+                keccak256("1"),
+                block.chainid,
+                net.bos
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s_) = vm.sign(userPk, keccak256(abi.encodePacked("\x19\x01", domain, structHash)));
+        return abi.encodePacked(r, s_, v);
+    }
+
+    bytes32 constant ADJUST_TH = keccak256(
+        "AdjustTrove(uint256 collWithdrawal,uint256 debtChange,bool isDebtIncrease,uint256 assetAmount,address borrower,address recipient,uint256 nonce,uint256 deadline)"
+    );
+
+    /// Leverage up a REAL trove: refinance (resets capacity) then relever, two real signatures
+    /// on consecutive nonces, one transaction.
+    function test_fork_refinanceThenReleverOnRealMezo() public {
+        _coilFork(0.05e18, 0.1e18); // 2x
+        (uint256 c0,,,,,) = ITMLike(net.troveManager).getEntireDebtAndColl(user);
+        uint256 add = 0.03e18;
+        uint256 debt = (router.quoteMusdForBtc(add) * 1005) / 1000;
+        uint256 deadline = block.timestamp + 1 hours;
+        uint256 n = IBOSNonce(net.bos).getNonce(user);
+        uint16 rate = IRateLike(INTEREST_RATE_MANAGER).interestRate();
+        bytes memory refi = _signAtNonce(
+            keccak256("Refinance(address borrower,uint16 interestRate,uint256 nonce,uint256 deadline)"),
+            abi.encode(user, rate), n, deadline
+        );
+        bytes memory adj = _signAtNonce(ADJUST_TH, abi.encode(uint256(0), debt, true, add, user, address(router)), n + 1, deadline);
+        vm.prank(user);
+        router.relever(add, debt, address(0), address(0), adj, refi, deadline, 0);
+        (uint256 c1,,,,,) = ITMLike(net.troveManager).getEntireDebtAndColl(user);
+        assertEq(c1, c0 + add, "collateral added to the real trove");
+        assertEq(IBOSNonce(net.bos).getNonce(user), n + 2);
+        console2.log("relevered the real trove by (sats)", add / 1e10);
+    }
+
+    /// Coil's MUSD incentives land in the REAL MUSD/BTC gauge incentive contract.
+    function test_fork_incentivesReachRealGauge() public {
+        router.setIncentives(MUSD_BTC_GAUGE_INCENTIVES, 10);
+        _coilFork(0.05e18, 0.15e18);
+        uint256 pending = router.pendingIncentives();
+        assertGt(pending, 0);
+        uint256 before = IApprove(net.musd).balanceOf(MUSD_BTC_GAUGE_INCENTIVES);
+        router.pushIncentives();
+        assertEq(IApprove(net.musd).balanceOf(MUSD_BTC_GAUGE_INCENTIVES) - before, pending, "MUSD in the gauge's incentives");
+        console2.log("MUSD sent to the MUSD/BTC gauge incentives", pending / 1e18);
+    }
+}
+
+address constant INTEREST_RATE_MANAGER = 0xD4D6c36A592A2c5e86035A6bca1d57747a567f37;
+// PoolsVoter 0x263F…5F0D (testnet veBTC) -> gauge 0x72D8…Cd2c -> incentives (bribe) contract.
+address constant MUSD_BTC_GAUGE_INCENTIVES = 0x75b6B35Fc78826A0B7E1f9c08bb7d84bd70D0ee1;
+
+interface IRateLike {
+    function interestRate() external view returns (uint16);
 }
 
 interface IApprove {
