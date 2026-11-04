@@ -6,7 +6,7 @@ Coil opens a leveraged MUSD trove in one transaction, in the user's own name, an
 
 Track 1 (DeFi) · Chain: Mezo testnet (31611) · Status: Wave 1 project, extended in Wave 2 · Readiness: testnet deployment · [Mezo Buildathon](https://app.akindo.io/wave-hacks/OVOO0gdrVU8379D10)
 
-**App:** https://coil-mezo-blitz-bet.vercel.app/#/app · **Threat model:** [`docs/security/threat-model.md`](docs/security/threat-model.md) · **CI:** [![CI](https://github.com/Wilivms/Coil/actions/workflows/ci.yml/badge.svg)](https://github.com/Wilivms/Coil/actions/workflows/ci.yml) · **Keeper runs:** [Actions → Keeper](https://github.com/Wilivms/Coil/actions/workflows/keeper.yml)
+**App:** https://coil-mezo-blitz-bet.vercel.app/#/app · **Proof:** [every transaction](https://coil-mezo-blitz-bet.vercel.app/#/proof) · **Try it in 2 minutes:** [#/try](https://coil-mezo-blitz-bet.vercel.app/#/try) · **Deck:** [PDF](docs/Coil-deck.pdf) · **Threat model:** [`docs/security/threat-model.md`](docs/security/threat-model.md) · **CI:** [![CI](https://github.com/Wilivms/Coil/actions/workflows/ci.yml/badge.svg)](https://github.com/Wilivms/Coil/actions/workflows/ci.yml) · **Keeper runs:** [Actions → Keeper](https://github.com/Wilivms/Coil/actions/workflows/keeper.yml)
 
 ## Review in 5 minutes
 
@@ -26,10 +26,10 @@ Every sentence of the Wave 1 review, and what answers it:
 |---|---|---|
 | "Fix the High finding first: add a signed minBtcOut or a PriceFeed-based bound to fireGuard so a keeper can't sandwich the pool" | **Both.** Every swap (coil, unwind, deleverage, Guard) is bounded by MUSD's PriceFeed (`maxDeviationBps`, 3% default, 5% hard cap), and Guard stores a signed `minBtcOut` | `test_guard_keeperSandwichReverts`, `testFuzz_guardNeverSellsBelowOracleBound`, invariants with pool attacks |
 | "make it work in Recovery Mode (Guard can't withdraw collateral when TCR is under 150%)" | **Shield**: a signed `RepayMUSD` funded by the Reserve. Repaying is allowed in Recovery Mode | `test_shield_worksInRecoveryMode`, `test_guard_blockedInRecoveryMode_statusSaysSo` |
-| "run the Guard stop-loss end to end on-chain with a keeper" | Keeper runs every 5 minutes on GitHub Actions and fires Guards and Shields; "Test it now" in the app arms a Guard that fires within minutes | [Keeper runs](https://github.com/Wilivms/Coil/actions/workflows/keeper.yml), fires in the activity panel |
-| "get wallets other than your deployer using the router" | Guard and Shield now work on **any** MUSD trove, not only Coil's; onboarding for outside testers | `test_guard_worksOnTroveNotOpenedWithCoil` |
-| "verify CoilRouter on the Mezo explorer" | v2 source-verified on Blockscout | link below |
-| "Cut the demo video to 2 minutes, and let visitors reach the app without the drawing intro" | Video under 2:00; `#/app` opens the app directly | |
+| "run the Guard stop-loss end to end on-chain with a keeper" | Always-on keeper (GitHub Action polling every 15 s, chaining itself) fires Guards and Shields; "Test it now" arms one at today's price | First fire: [tx 0x76ce…2894](https://explorer.test.mezo.org/tx/0x76cefd312a3fab1e8d961aadbaea66c1f02f0e96209c5ab9969aa63ae17b2894) · [keeper runs](https://github.com/Wilivms/Coil/actions/workflows/keeper.yml) |
+| "get wallets other than your deployer using the router" | Guard and Shield now work on **any** MUSD trove, not only Coil's; [Try-it onboarding](https://coil-mezo-blitz-bet.vercel.app/#/try) and a live wallet counter on the [Proof page](https://coil-mezo-blitz-bet.vercel.app/#/proof) | `test_guard_worksOnTroveNotOpenedWithCoil` |
+| "verify CoilRouter on the Mezo explorer" | v2 source-verified on Blockscout | [code tab](https://explorer.test.mezo.org/address/0xa9adbe2e3ddfbd3795add019c8ea64a950777a92#code) |
+| "Cut the demo video to 2 minutes, and let visitors reach the app without the drawing intro" | Video under 2:00; the site opens straight, the intro is opt-in at `#/pitch` | |
 | Raised across many Wave 1 reviews: double-counted pending redistribution, redemptions, `claimCollateral` | `closeAmount` and the app read MUSD's totals once; Shield's redemption trigger; one-click claim of leftover BTC after a redemption | `test_closeAmount_doesNotDoubleCountPending` |
 
 ## Live on Mezo testnet
