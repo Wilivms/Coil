@@ -61,7 +61,9 @@ contract CoilForkTest is Test, MezoAddresses {
         vm.etch(SKIP_ORACLE, address(new ForkAggregator(mid)).code);
         ForkAggregator(SKIP_ORACLE).set(mid);
 
-        router = new CoilRouter(net.bos, net.troveManager, net.priceFeed, net.pool, net.musd, net.btc, address(this));
+        router = new CoilRouter(
+            net.bos, net.troveManager, net.priceFeed, net.sortedTroves, net.savings, net.pool, net.musd, net.btc, address(this)
+        );
         (user, userPk) = makeAddrAndKey("coil-fork-user");
         vm.deal(user, 2e18);
         console2.log("oracle/pool mid price", uint256(mid) / 1e18);
@@ -120,6 +122,82 @@ contract CoilForkTest is Test, MezoAddresses {
         assertEq(ITMLike(net.troveManager).getTroveStatus(user), 2, "closed by owner");
         assertGt(out, (deposit * 95) / 100);
     }
+
+    // ---------------------------------------------------------------- Wave 2
+
+    function _coilFork(uint256 deposit, uint256 totalColl) internal {
+        uint256 debt = (router.quoteMusdForBtc(totalColl - deposit) * 1005) / 1000;
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _sign(
+            keccak256(
+                "OpenTrove(uint256 assetAmount,uint256 debtAmount,address borrower,address recipient,uint256 nonce,uint256 deadline)"
+            ),
+            abi.encode(totalColl, debt, user, address(router)),
+            deadline
+        );
+        vm.prank(user);
+        router.coil{value: deposit}(totalColl, debt, address(0), address(0), sig, deadline);
+    }
+
+    /// The live testnet oracle prices BTC ~2% under the pool (MUSD trades under $1 there).
+    /// Coil v2 bounds every swap by the oracle and must still open at that real gap.
+    function test_fork_coilAtRealOracleGap() public {
+        int256 mid = ForkAggregator(SKIP_ORACLE).answer();
+        ForkAggregator(SKIP_ORACLE).set((mid * 98) / 100);
+        _coilFork(0.05e18, 0.15e18);
+        assertEq(ITMLike(net.troveManager).getTroveStatus(user), 1);
+    }
+
+    /// Reserve in the REAL sMUSD vault, Shield repays the REAL trove through a REAL RepayMUSD signature.
+    function test_fork_reserveAndShieldOnRealMezo() public {
+        _coilFork(0.05e18, 0.15e18);
+        (, uint256 p0, uint256 i0,,,) = ITMLike(net.troveManager).getEntireDebtAndColl(user);
+
+        deal(net.musd, user, 2_000e18);
+        vm.startPrank(user);
+        IApprove(net.musd).approve(address(router), 2_000e18);
+        router.depositReserve(2_000e18);
+        vm.stopPrank();
+        assertEq(IApprove(net.savings).balanceOf(address(router)), 2_000e18, "reserve sits in real sMUSD");
+
+        uint256 repay = 1_000e18;
+        uint64 deadline = uint64(block.timestamp + 7 days);
+        bytes memory sig = _sign(
+            keccak256("RepayMUSD(uint256 amount,address borrower,uint256 nonce,uint256 deadline)"),
+            abi.encode(repay, user),
+            deadline
+        );
+        int256 mid = ForkAggregator(SKIP_ORACLE).answer();
+        vm.prank(user);
+        router.armShield(uint128(repay), uint128(uint256(mid) * 9 / 10), 0, 5e18, deadline, sig);
+
+        ForkAggregator(SKIP_ORACLE).set((mid * 89) / 100);
+        address k = makeAddr("keeper");
+        vm.prank(k);
+        router.fireShield(user, address(0), address(0), 0);
+
+        (, uint256 p1, uint256 i1,,,) = ITMLike(net.troveManager).getEntireDebtAndColl(user);
+        assertEq(p0 + i0 - (p1 + i1), repay, "real trove repaid from the reserve");
+        assertEq(IApprove(net.musd).balanceOf(k), 5e18, "keeper paid from the reserve");
+        assertEq(router.reserveOf(user), 995e18);
+        console2.log("shield repaid on the real trove (MUSD)", repay / 1e18);
+    }
+
+    /// Walk the REAL redemption queue (300+ troves) up to a fresh Coil trove.
+    function test_fork_debtAheadOnRealQueue() public {
+        _coilFork(0.05e18, 0.15e18);
+        (uint256 ahead, bool found) = router.debtAhead(user, 200);
+        console2.log("found in first 200 of the queue", found);
+        console2.log("redeemable MUSD ahead of the new trove", ahead / 1e18);
+        // A fresh 3x trove (~170% ICR) on testnet sits deep in the queue; at least the walk must
+        // not revert and must report a lower bound when it stops early.
+        assertTrue(found || ahead > 0);
+    }
+}
+
+interface IApprove {
+    function approve(address, uint256) external returns (bool);
+    function balanceOf(address) external view returns (uint256);
 }
 
 interface IPoolLike {

@@ -15,3 +15,13 @@ mezo_mainnet = "https://mezo-mainnet.boar.network"
 
 [fmt]
 line_length = 100
+
+[invariant]
+runs = 64
+depth = 120
+fail_on_revert = false
+show_metrics = true
+
+[profile.ci.invariant]
+runs = 256
+depth = 200

@@ -57,7 +57,39 @@ interface IBorrowerOperationsSignatures {
         uint256 deadline
     ) external payable;
 
+    function repayMUSDWithSignature(
+        uint256 amount,
+        address upperHint,
+        address lowerHint,
+        address borrower,
+        bytes memory signature,
+        uint256 deadline
+    ) external;
+
     function getNonce(address user) external view returns (uint256);
+}
+
+/// MUSD's redemption queue: sorted by nominal ICR (principal only), highest first.
+/// Redemptions start at `getLast()` and walk towards `getFirst()` with `getPrev`.
+interface ISortedTroves {
+    function getLast() external view returns (address);
+    function getPrev(address id) external view returns (address);
+    function contains(address id) external view returns (bool);
+}
+
+/// Mezo's MUSD savings vault (sMUSD). Not ERC-4626: shares are 1:1 with MUSD and yield is paid
+/// separately in MUSD through `claimYield`. Testnet 0x6f461c68…7e16, mainnet 0xb4D498…51CC.
+interface IMUSDSavingsRate {
+    function deposit(uint256 amount) external;
+    function withdraw(uint256 amount) external;
+    function claimYield() external returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function musdToken() external view returns (address);
+}
+
+interface IERC20Approve {
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
 interface ITroveManager {
@@ -75,6 +107,10 @@ interface ITroveManager {
 
     /// 0 nonExistent, 1 active, 2 closedByOwner, 3 closedByLiquidation, 4 closedByRedemption
     function getTroveStatus(address borrower) external view returns (uint256);
+
+    function getCurrentICR(address borrower, uint256 price) external view returns (uint256);
+
+    function checkRecoveryMode(uint256 price) external view returns (bool);
 }
 
 interface IPriceFeed {

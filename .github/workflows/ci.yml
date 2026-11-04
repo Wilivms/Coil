@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  contracts:
+    name: Contracts (unit, fuzz, invariants)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Build and size check (EIP-170)
+        run: forge build --sizes
+      - name: Unit, fuzz and invariant tests
+        env:
+          FOUNDRY_PROFILE: ci
+        run: forge test --no-match-path "test/fork/*" -vv
+
+  fork:
+    name: Fork tests against live Mezo testnet
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Real MUSD, sMUSD, SortedTroves and MUSD/BTC pool
+        run: forge test --match-path "test/fork/*" --fork-url https://rpc.test.mezo.org -vv
+
+  app:
+    name: App typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run build

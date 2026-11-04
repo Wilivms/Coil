@@ -52,11 +52,75 @@ contract MockMUSD {
         totalSupply -= amount;
     }
 
+    mapping(address => mapping(address => uint256)) public allowance;
+
     function transfer(address to, uint256 amount) external returns (bool) {
         require(balanceOf[msg.sender] >= amount, "MUSD: balance");
         balanceOf[msg.sender] -= amount;
         balanceOf[to] += amount;
         return true;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        uint256 a = allowance[from][msg.sender];
+        require(a >= amount, "MUSD: allowance");
+        if (a != type(uint256).max) allowance[from][msg.sender] = a - amount;
+        require(balanceOf[from] >= amount, "MUSD: balance");
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+}
+
+/// Mezo's MUSDSavingsRate (sMUSD): 1:1 shares, yield paid separately in MUSD,
+/// outstanding yield paid out on withdraw (like the real vault).
+contract MockSavings {
+    MockMUSD public immutable musdToken;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => uint256) public claimableYield;
+    uint256 public totalSupply;
+
+    constructor(MockMUSD m) {
+        musdToken = m;
+    }
+
+    function deposit(uint256 amount) external {
+        require(amount > 0, "ZeroAmount");
+        require(musdToken.transferFrom(msg.sender, address(this), amount), "transferFrom");
+        balanceOf[msg.sender] += amount;
+        totalSupply += amount;
+    }
+
+    function withdraw(uint256 amount) external {
+        require(amount > 0, "ZeroAmount");
+        require(balanceOf[msg.sender] >= amount, "InsufficientBalance");
+        _claim(msg.sender);
+        balanceOf[msg.sender] -= amount;
+        totalSupply -= amount;
+        musdToken.transfer(msg.sender, amount);
+    }
+
+    function claimYield() external returns (uint256) {
+        return _claim(msg.sender);
+    }
+
+    /// Test helper: credit `amount` of yield to `holder`, backed by freshly minted MUSD.
+    function addYield(address holder, uint256 amount) external {
+        musdToken.mint(address(this), amount);
+        claimableYield[holder] += amount;
+    }
+
+    function _claim(address who) internal returns (uint256 y) {
+        y = claimableYield[who];
+        if (y > 0) {
+            claimableYield[who] = 0;
+            musdToken.transfer(who, y);
+        }
     }
 }
 
@@ -163,6 +227,8 @@ contract MockTroves {
     );
     bytes32 public constant CLOSE_TROVE_TYPEHASH =
         keccak256("CloseTrove(address borrower,address recipient,uint256 nonce,uint256 deadline)");
+    bytes32 public constant REPAY_MUSD_TYPEHASH =
+        keccak256("RepayMUSD(uint256 amount,address borrower,uint256 nonce,uint256 deadline)");
     bytes32 private constant DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
@@ -243,9 +309,10 @@ contract MockTroves {
         _verify(CLOSE_TROVE_TYPEHASH, abi.encode(borrower, recipient), borrower, signature, deadline);
         Trove memory t = troves[borrower];
         require(t.status == 1, "BorrowerOps: Trove does not exist or is closed");
-        uint256 debt = t.principal + t.interest;
+        uint256 debt = t.principal + pendingPrincipal[borrower] + t.interest;
         musd.burn(msg.sender, debt - GAS_COMP);
         delete troves[borrower];
+        delete pendingPrincipal[borrower];
         troves[borrower].status = 2;
         (bool ok,) = recipient.call{value: t.coll}("");
         require(ok, "Sending BTC failed");
@@ -272,6 +339,7 @@ contract MockTroves {
         require(!isDebtIncrease && msg.value == 0, "mock: deleverage only");
         Trove storage t = troves[borrower];
         require(t.status == 1, "BorrowerOps: Trove does not exist or is closed");
+        if (recoveryMode) require(collWithdrawal == 0, "BorrowerOps: Collateral withdrawal not permitted Recovery Mode");
         musd.burn(msg.sender, debtChange);
         // repay interest first, then principal (like MUSD)
         uint256 fromInterest = debtChange > t.interest ? t.interest : debtChange;
@@ -284,14 +352,86 @@ contract MockTroves {
         require(ok, "Sending BTC failed");
     }
 
+    function repayMUSDWithSignature(
+        uint256 amount,
+        address,
+        address,
+        address borrower,
+        bytes memory signature,
+        uint256 deadline
+    ) external {
+        _verify(REPAY_MUSD_TYPEHASH, abi.encode(amount, borrower), borrower, signature, deadline);
+        Trove storage t = troves[borrower];
+        require(t.status == 1, "BorrowerOps: Trove does not exist or is closed");
+        require(amount <= t.principal + t.interest - GAS_COMP, "BorrowerOps: Amount repaid must not be larger than the Trove's debt");
+        musd.burn(msg.sender, amount); // like MUSD: burned from the caller
+        uint256 fromInterest = amount > t.interest ? t.interest : amount;
+        t.interest -= fromInterest;
+        t.principal -= amount - fromInterest;
+        require(t.principal + t.interest - GAS_COMP >= MIN_NET_DEBT, "BorrowerOps: Trove's net debt must be greater than minimum");
+    }
+
     // ---- TroveManager
+    bool public recoveryMode;
+    mapping(address => uint256) public pendingPrincipal;
+
+    /// Like MUSD: principal and interest already include the pending redistribution,
+    /// which is also reported on its own in the last fields.
     function getEntireDebtAndColl(address b)
         external
         view
         returns (uint256, uint256, uint256, uint256, uint256, uint256)
     {
         Trove memory t = troves[b];
-        return (t.coll, t.principal, t.interest, 0, 0, 0);
+        uint256 pp = pendingPrincipal[b];
+        return (t.coll, t.principal + pp, t.interest, 0, pp, 0);
+    }
+
+    function getCurrentICR(address b, uint256 price) external view returns (uint256) {
+        Trove memory t = troves[b];
+        uint256 debt = t.principal + pendingPrincipal[b] + t.interest;
+        return debt == 0 ? type(uint256).max : (t.coll * price) / debt;
+    }
+
+    function checkRecoveryMode(uint256) external view returns (bool) {
+        return recoveryMode;
+    }
+
+    function setRecoveryMode(bool on) external {
+        recoveryMode = on;
+    }
+
+    /// Test helper: a pending redistribution that is folded into the trove for real.
+    function addPending(address b, uint256 amount) external {
+        pendingPrincipal[b] += amount;
+    }
+
+    /// Test helper: a trove that belongs to someone else, for the redemption queue.
+    function setTrove(address b, uint256 coll, uint256 debt) external {
+        troves[b] = Trove(coll, debt, 0, 1);
+    }
+
+    // ---- SortedTroves (queue[0] is the tail: redeemed first)
+    address[] public queue;
+
+    function setQueue(address[] calldata q) external {
+        queue = q;
+    }
+
+    function getLast() external view returns (address) {
+        return queue.length == 0 ? address(0) : queue[0];
+    }
+
+    function getPrev(address id) external view returns (address) {
+        for (uint256 i; i < queue.length; ++i) {
+            if (queue[i] == id) return i + 1 < queue.length ? queue[i + 1] : address(0);
+        }
+        return address(0);
+    }
+
+    function contains(address id) external view returns (bool) {
+        for (uint256 i; i < queue.length; ++i) if (queue[i] == id) return true;
+        return false;
     }
 
     function getTroveStatus(address b) external view returns (uint256) {

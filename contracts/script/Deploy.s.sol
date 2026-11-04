@@ -16,7 +16,9 @@ contract Deploy is Script, MezoAddresses {
         Net memory net = forChain(block.chainid);
         vm.startBroadcast();
         // tx.origin is the broadcasting account here (msg.sender would be Foundry's default sender).
-        router = new CoilRouter(net.bos, net.troveManager, net.priceFeed, net.pool, net.musd, net.btc, tx.origin);
+        router = new CoilRouter(
+            net.bos, net.troveManager, net.priceFeed, net.sortedTroves, net.savings, net.pool, net.musd, net.btc, tx.origin
+        );
         vm.stopBroadcast();
         console2.log("CoilRouter deployed at", address(router));
         console2.log("Paste it into app/src/lib/chain.ts -> COIL_ROUTER");
