@@ -17,7 +17,6 @@ jobs:
   keep:
     runs-on: ubuntu-latest
     timeout-minutes: 8
-    if: ${{ vars.COIL_ROUTER != '' }}
     defaults:
       run:
         working-directory: keeper
@@ -31,8 +30,8 @@ jobs:
       - run: npm ci
       - name: One keeper pass
         env:
-          COIL_ROUTER: ${{ vars.COIL_ROUTER }}
-          FROM_BLOCK: ${{ vars.COIL_ROUTER_BLOCK }}
+          COIL_ROUTER: ${{ vars.COIL_ROUTER || '0xA9adbE2E3DDFBd3795ADD019c8EA64a950777a92' }}
+          FROM_BLOCK: ${{ vars.COIL_ROUTER_BLOCK || '16558220' }}
           KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
           ONCE: '1'
         run: npm start

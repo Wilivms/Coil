@@ -6,7 +6,7 @@ Coil opens a leveraged MUSD trove in one transaction, in the user's own name, an
 
 Track 1 (DeFi) · Chain: Mezo testnet (31611) · Status: Wave 1 project, extended in Wave 2 · Readiness: testnet deployment · [Mezo Buildathon](https://app.akindo.io/wave-hacks/OVOO0gdrVU8379D10)
 
-**App:** https://wilivms.github.io/Coil/#/app · **Threat model:** [`docs/security/threat-model.md`](docs/security/threat-model.md) · **CI:** [![CI](https://github.com/Wilivms/Coil/actions/workflows/ci.yml/badge.svg)](https://github.com/Wilivms/Coil/actions/workflows/ci.yml) · **Keeper runs:** [Actions → Keeper](https://github.com/Wilivms/Coil/actions/workflows/keeper.yml)
+**App:** https://coil-mezo-blitz-bet.vercel.app/#/app · **Threat model:** [`docs/security/threat-model.md`](docs/security/threat-model.md) · **CI:** [![CI](https://github.com/Wilivms/Coil/actions/workflows/ci.yml/badge.svg)](https://github.com/Wilivms/Coil/actions/workflows/ci.yml) · **Keeper runs:** [Actions → Keeper](https://github.com/Wilivms/Coil/actions/workflows/keeper.yml)
 
 ## Review in 5 minutes
 
@@ -36,7 +36,7 @@ Every sentence of the Wave 1 review, and what answers it:
 
 | | |
 |---|---|
-| CoilRouter v2 (Wave 2) | deploying, address added here once on-chain |
+| CoilRouter v2 (Wave 2) | [`0xa9adbe2e3ddfbd3795add019c8ea64a950777a92`](https://explorer.test.mezo.org/address/0xa9adbe2e3ddfbd3795add019c8ea64a950777a92) · source-verified · [deploy tx](https://explorer.test.mezo.org/tx/0xac47acbe97dbf0412a1f2dd2667384572529950859a518d4eb25f27afb2be6d0) (block 16558220) |
 | CoilRouter v1 (Wave 1) | [`0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16`](https://explorer.test.mezo.org/address/0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16) |
 | MUSD/BTC pool | [`0xd16A…6AA9`](https://explorer.test.mezo.org/address/0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9) (flash lender) |
 | sMUSD vault | [`0x6f46…7e16`](https://explorer.test.mezo.org/address/0x6f461c68B2c5492C0F5CCEc5a264d692aA7A8e16) (where the Reserve sits) |

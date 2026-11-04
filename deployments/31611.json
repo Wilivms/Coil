@@ -1,0 +1,32 @@
+{
+  "chainId": 31611,
+  "network": "Mezo testnet",
+  "contracts": {
+    "CoilRouter": {
+      "version": "v2",
+      "address": "0xa9adbe2e3ddfbd3795add019c8ea64a950777a92",
+      "deployTx": "0xac47acbe97dbf0412a1f2dd2667384572529950859a518d4eb25f27afb2be6d0",
+      "block": 16558220,
+      "verified": "https://explorer.test.mezo.org/address/0xa9adbe2e3ddfbd3795add019c8ea64a950777a92#code",
+      "commit": "a371d3d",
+      "treasury": "0xcFe7934D31F6C22DDaFeD72FC065D13eFF48b368",
+      "maxDeviationBps": 300,
+      "feeBps": 0
+    },
+    "CoilRouterV1": {
+      "version": "v1",
+      "address": "0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16",
+      "deployTx": "0x724a7b45f0fec9fbb97eb427b80ade4e076092db2d2b0e4004794532514c0118",
+      "block": 16188308
+    }
+  },
+  "mezo": {
+    "BorrowerOperationsSignatures": "0xD757e3646AF370b15f32EB557F0F8380Df7D639e",
+    "TroveManager": "0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0",
+    "PriceFeed": "0x86bCF0841622a5dAC14A313a15f96A95421b9366",
+    "SortedTroves": "0x722E4D24FD6Ff8b0AC679450F3D91294607268fA",
+    "MUSDSavingsRate": "0x6f461c68B2c5492C0F5CCEc5a264d692aA7A8e16",
+    "MUSD": "0x118917a40FAF1CD7a13dB0Ef56C86De7973Ac503",
+    "MUSD_BTC_pool": "0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9"
+  }
+}
