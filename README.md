@@ -1,108 +1,109 @@
 # Coil
 
-**Leveraged Bitcoin on Mezo in one signature.**
+**Leveraged Bitcoin on Mezo that survives redemptions.**
 
-Coil opens a leveraged MUSD trove in a single transaction. It flash-borrows BTC from Mezo's own MUSD/BTC pool, opens the trove **in the user's name** through MUSD's EIP-712 `BorrowerOperationsSignatures`, and repays the pool with the MUSD the trove just minted. The same trick runs in reverse to unwind or deleverage, and it powers **Guard**, a pre-signed stop-loss that any keeper can execute when BTC falls to a trigger price.
+Coil opens a leveraged MUSD trove in one transaction, in the user's own name, and keeps it alive: **Guard** deleverages it before liquidation, and **Shield** repays it from a **Reserve** parked in Mezo's sMUSD vault when the trove gets close to the front of the redemption queue.
 
-Built for the [Mezo Buildathon](https://app.akindo.io/wave-hacks/OVOO0gdrVU8379D10), Track 1 (DeFi).
+Track 1 (DeFi) · Chain: Mezo testnet (31611) · Status: Wave 1 project, extended in Wave 2 · Readiness: testnet deployment · [Mezo Buildathon](https://app.akindo.io/wave-hacks/OVOO0gdrVU8379D10)
 
-| Looping by hand to 3× | With Coil |
-|---|---|
-| 1 open + 6 loops × (borrow, approve, swap, deposit) = **25 transactions**, 6 pool fees, exposed between steps | **1 signature + 1 transaction**, 1 swap, atomic |
+**App:** https://wilivms.github.io/Coil/#/app · **Threat model:** [`docs/security/threat-model.md`](docs/security/threat-model.md) · **CI:** [![CI](https://github.com/Wilivms/Coil/actions/workflows/ci.yml/badge.svg)](https://github.com/Wilivms/Coil/actions/workflows/ci.yml) · **Keeper runs:** [Actions → Keeper](https://github.com/Wilivms/Coil/actions/workflows/keeper.yml)
+
+## Review in 5 minutes
+
+1. **The problem, measured on Mezo** (`cd keeper && npm ci && npm run stats` reprints every number with its block):
+   - On mainnet, MUSD's TroveManager has logged **1,176 redemptions against 28 liquidations**: 5.9M MUSD redeemed, 78.9 BTC taken from troves. Only **3 troves** are still open, for 29.5M MUSD in circulation.
+   - Redemptions take the lowest-ratio troves first. A leveraged trove is exactly that, so for a Mezo borrower the risk that ends a position is a redemption, not a liquidation.
+2. **The product:** one transaction to open at 1.5–4×, one to close. Guard covers the price, Shield covers redemptions and Recovery Mode, the Reserve earns sMUSD yield while it waits.
+3. **The code:** [`contracts/src/CoilRouter.sol`](contracts/src/CoilRouter.sol), one immutable contract, no proxy, no forwarder, no admin path to user funds.
+4. **The proof:** `cd contracts && forge test` (unit, fuzz, invariants) and the fork suite against the real Mezo testnet contracts (below).
+5. **The security story:** [threat model](docs/security/threat-model.md), every rule mapped to the test that enforces it.
+
+## What changed since Wave 1
+
+Every sentence of the Wave 1 review, and what answers it:
+
+| Wave 1 review | Wave 2 answer | Proof |
+|---|---|---|
+| "Fix the High finding first: add a signed minBtcOut or a PriceFeed-based bound to fireGuard so a keeper can't sandwich the pool" | **Both.** Every swap (coil, unwind, deleverage, Guard) is bounded by MUSD's PriceFeed (`maxDeviationBps`, 3% default, 5% hard cap), and Guard stores a signed `minBtcOut` | `test_guard_keeperSandwichReverts`, `testFuzz_guardNeverSellsBelowOracleBound`, invariants with pool attacks |
+| "make it work in Recovery Mode (Guard can't withdraw collateral when TCR is under 150%)" | **Shield**: a signed `RepayMUSD` funded by the Reserve. Repaying is allowed in Recovery Mode | `test_shield_worksInRecoveryMode`, `test_guard_blockedInRecoveryMode_statusSaysSo` |
+| "run the Guard stop-loss end to end on-chain with a keeper" | Keeper runs every 5 minutes on GitHub Actions and fires Guards and Shields; "Test it now" in the app arms a Guard that fires within minutes | [Keeper runs](https://github.com/Wilivms/Coil/actions/workflows/keeper.yml), fires in the activity panel |
+| "get wallets other than your deployer using the router" | Guard and Shield now work on **any** MUSD trove, not only Coil's; onboarding for outside testers | `test_guard_worksOnTroveNotOpenedWithCoil` |
+| "verify CoilRouter on the Mezo explorer" | v2 source-verified on Blockscout | link below |
+| "Cut the demo video to 2 minutes, and let visitors reach the app without the drawing intro" | Video under 2:00; `#/app` opens the app directly | |
+| Raised across many Wave 1 reviews: double-counted pending redistribution, redemptions, `claimCollateral` | `closeAmount` and the app read MUSD's totals once; Shield's redemption trigger; one-click claim of leftover BTC after a redemption | `test_closeAmount_doesNotDoubleCountPending` |
 
 ## Live on Mezo testnet
 
-**App:** https://wilivms.github.io/Coil/ (intro, overview, then `#/app`)
-
 | | |
 |---|---|
-| CoilRouter | [`0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16`](https://explorer.test.mezo.org/address/0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16) |
-| Deploy tx | [`0x724a7b45…0118`](https://explorer.test.mezo.org/tx/0x724a7b45f0fec9fbb97eb427b80ade4e076092db2d2b0e4004794532514c0118) (block 16188308) |
-| Pool used | MUSD/BTC volatile basic pool [`0xd16A…6AA9`](https://explorer.test.mezo.org/address/0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9) |
-| Fork test | `test_fork_coilThenUnwind` passes against the real MUSD contracts and pool |
+| CoilRouter v2 (Wave 2) | deploying, address added here once on-chain |
+| CoilRouter v1 (Wave 1) | [`0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16`](https://explorer.test.mezo.org/address/0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16) |
+| MUSD/BTC pool | [`0xd16A…6AA9`](https://explorer.test.mezo.org/address/0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9) (flash lender) |
+| sMUSD vault | [`0x6f46…7e16`](https://explorer.test.mezo.org/address/0x6f461c68B2c5492C0F5CCEc5a264d692aA7A8e16) (where the Reserve sits) |
 
-## Why it is deep on Mezo
+## How it uses Mezo
 
-Coil only works because of three Mezo primitives, used together:
-
-1. **Mezo Pools flash swaps.** The Aerodrome-style `Pool.swap()` sends tokens first, calls `hook()` on the receiver, then checks the invariant. Coil uses the MUSD/BTC volatile pool as its flash lender and its exact-out curve as the quote.
-2. **MUSD signature operations.** `openTroveWithSignature`, `closeTroveWithSignature` and `adjustTroveWithSignature` let a contract supply collateral and pay debt for a borrower who signed. The trove is never owned by Coil.
-3. **BTC is native gas and an ERC-20 precompile** (`0x7b7c…0000`) over the same balance, so BTC received from the pool is forwarded as `msg.value` collateral without wrapping.
+| Mezo primitive | Coil uses it to |
+|---|---|
+| Mezo Pools flash swap (`Pool.swap` → `hook`) | borrow the BTC (open) or MUSD (close) for one transaction |
+| `BorrowerOperationsSignatures` (Open, Close, Adjust, RepayMUSD) | act on the user's trove only with an exact EIP-712 signature: the trove is never Coil's |
+| MUSD `PriceFeed` | trigger Guard and Shield, and bound every swap |
+| `SortedTroves` + `TroveManager` | prove on-chain how much redeemable debt stands before a trove |
+| sMUSD (`MUSDSavingsRate`) | hold the Reserve and earn its yield (MUSD borrower interest flows there through MUSD's PCV) |
+| `CollSurplusPool` / `claimCollateral` | return leftover BTC after a redemption closes a trove |
+| BTC native + ERC-20 precompile | forward pool BTC as collateral without wrapping |
 
 ## Features
 
 | | What it does | Where |
 |---|---|---|
-| **Coil** | Open at a target leverage in one tx; leftover MUSD buffer refunded | `CoilRouter.coil` |
-| **Unwind** | Close the whole trove in one tx and get net BTC back | `CoilRouter.unwind` |
-| **Deleverage** | Repay part of the debt with a flash swap, sell only the BTC needed | `CoilRouter.deleverage` |
-| **Guard** | Store a signed partial deleverage + trigger; any keeper fires it for a bounty once MUSD's `PriceFeed` ≤ trigger. Stale-signature detection on-chain | `armGuard` / `fireGuard` / `guardStatus`, `keeper/` |
-| **Risk cockpit** | Liquidation odds (GBM first-passage) on 7/30/90 days, empirical odds from every window since 2019, a 220-path Monte Carlo field, history replay | `app/src/lib/risk.ts` |
-| **Redemption radar** | Reads every trove on Mezo and shows how much MUSD must be redeemed before yours is touched | `app/src/lib/live.ts` |
-| **Live market** | Oracle price, pool depth, fixed rate, system TCR, recovery mode, read every 15 s | `useMarket` |
+| **Coil** | Open at a target leverage in one tx; leftover MUSD refunded | `coil` |
+| **Unwind** | Close the whole trove in one tx, net BTC back | `unwind` |
+| **Deleverage** | Repay part of the debt with a flash swap | `deleverage` |
+| **Guard** | Signed partial deleverage + price trigger + `minBtcOut`; any keeper fires it for a BTC bounty; any MUSD trove | `armGuard` / `fireGuard` / `guardStatus` |
+| **Reserve** | MUSD in Mezo's sMUSD vault, yield credited pro rata, only its owner can withdraw | `depositReserve` / `withdrawReserve` / `reserveBalance` |
+| **Shield** | Signed repay from the Reserve, fired at a price or when ≤ X MUSD stands ahead in the redemption queue; works in Recovery Mode | `armShield` / `fireShield` / `shieldStatus` / `debtAhead` |
+| **Claim** | Leftover BTC after a redemption, one click | `BorrowerOperations.claimCollateral` |
+| **Risk cockpit** | Liquidation odds, Monte Carlo, history replay, live redemption radar | `app/src/lib/risk.ts`, `live.ts` |
+
+## Why not mainnet yet
+
+Mainnet's MUSD/BTC pool holds about 0.75 BTC. A 0.1 BTC position at 3× would pay roughly 37% over the pool's mid price there, against 0.3% on testnet (`npm run stats`). Coil would launch on mainnet only once that pool is deep enough; routing part of Coil's fee to the pool's gauge is the plan to help get it there.
 
 ## Repository
 
 ```
-contracts/   Foundry project: CoilRouter, Mezo interfaces, tests, fork test, deploy script
-app/         Vite + React + wagmi/viem front end (landing + app)
-keeper/      Guard keeper (viem), anyone can run it and earn the bounty
+contracts/   Foundry: CoilRouter, Mezo interfaces, unit/fuzz/invariant/fork tests, deploy script
+app/         Vite + React + wagmi/viem (landing + app)
+keeper/      Guard and Shield keeper (viem), and the Mezo stats script
+docs/        Threat model
 ```
 
-## Contracts
+## Tests
 
 ```bash
 cd contracts
-forge test                                   # 21 tests incl. fuzzed open→close round trips
-forge test --match-path "test/fork/*" --fork-url mezo_testnet -vv   # real MUSD + real pool on Mezo testnet
+forge test                                                  # unit, fuzz, invariants (mocks mirror Mezo's pool and MUSD signatures)
+forge test --match-path "test/fork/*" --fork-url https://rpc.test.mezo.org -vv   # the real Mezo testnet
 ```
 
-- `test/mocks/Mocks.sol` mirrors the Mezo pool's swap/hook/K logic and MUSD's signature hashing exactly; the mocks verify real EIP-712 signatures.
-- `test/SignatureCompat.t.sol` proves that the digests viem produces in the app equal what `BorrowerOperationsSignatures` computes.
-- The fork test swaps in emulators only for the two chain precompiles a local fork cannot run (BTC token and Skip oracle). Everything else is the deployed bytecode.
+- **Invariants** (`test/invariant/`): random sequences of coils, unwinds, deleverages, Guard and Shield fires, Reserve moves, yield, redistributions, Recovery Mode, market moves and pool attacks. The router never keeps BTC or loose MUSD, never owns a trove, and the Reserve stays fully backed.
+- **Fork** (`test/fork/`): open and close a real trove; open at the live ~2% oracle gap; Reserve in the **real** sMUSD and a Shield repaying the **real** trove through a **real** `RepayMUSD` signature; walk the real 350-trove redemption queue.
+- **Signatures** (`SignatureCompat.t.sol`): the app's viem digests equal MUSD's for all four signed operations.
 
-### Deploy (Mezo testnet)
+## Deploy
 
 ```bash
 cd contracts
-cast wallet import coil-deployer --interactive    # once; your key is stored encrypted
+cast wallet import coil-deployer --interactive    # once; the key stays encrypted on your machine
 forge script script/Deploy.s.sol --rpc-url mezo_testnet --account coil-deployer --broadcast
 ```
-
-The app defaults to the deployed address above; to use your own deployment set `VITE_COIL_ROUTER` in `app/.env` (see `app/.env.example`).
-
-Test BTC: [faucet.test.mezo.org](https://faucet.test.mezo.org/). A trove needs at least 1,800 MUSD of debt, so at 3× deposit about 0.012 BTC or more.
-
-## App
-
-```bash
-cd app
-npm install
-npm run dev        # http://localhost:5173
-npm run build      # static build in app/dist (deploy to Vercel / Netlify)
-```
-
-Before a wallet is connected the app runs as a preview: every quote, ratio, probability and the radar are computed from live Mezo testnet data.
 
 ## Keeper
 
 ```bash
-cd keeper && npm install
-COIL_ROUTER=0x... KEEPER_PRIVATE_KEY=0x... npm start    # or DRY_RUN=1 to only watch
+cd keeper && npm ci
+COIL_ROUTER=0x... KEEPER_PRIVATE_KEY=0x... npm start     # DRY_RUN=1 to watch only, ONCE=1 for a single pass
 ```
 
-## Safety notes
-
-- The router never holds funds between transactions; every flow is checked by balance deltas and tests assert a zero balance after each one.
-- `receive()` rejects BTC outside a running flow, so a signature replayed directly against MUSD with Coil as recipient reverts instead of stranding collateral.
-- The UI refuses plans under 115% after price impact (MUSD's minimum is 110%).
-- Guard signatures authorise one exact adjustment with Coil as recipient. Any other trove operation bumps the MUSD nonce and makes it stale (`guardStatus` reports it).
-- Unaudited hackathon code on testnet.
-
-## Roadmap (Wave 2)
-
-- Re-leverage and leverage changes on an existing trove (`adjustTroveWithSignature` with `isDebtIncrease`).
-- Guard ladders: several triggers, each a smaller deleverage.
-- Coil Risk API: liquidation odds and redemption cover as a paid x402 endpoint in MUSD (Track 2).
-- Mezo Passport for Bitcoin-native wallets.
-- Optional protocol fee (capped at 0.5%, already in the contract, off by default).
+Unaudited hackathon code, testnet only.
