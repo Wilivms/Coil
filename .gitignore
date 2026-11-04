@@ -7,3 +7,4 @@ contracts/cache/
 contracts/broadcast/
 *.log
 app/tsconfig.tsbuildinfo
+contracts/lcov.info

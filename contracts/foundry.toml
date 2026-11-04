@@ -25,3 +25,11 @@ show_metrics = true
 [profile.ci.invariant]
 runs = 256
 depth = 200
+
+[profile.deep.fuzz]
+runs = 10000
+
+[profile.deep.invariant]
+runs = 512
+depth = 300
+fail_on_revert = false
