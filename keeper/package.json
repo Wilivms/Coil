@@ -2,6 +2,12 @@
   "name": "coil-keeper",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node guard-keeper.mjs", "stats": "node mezo-stats.mjs" },
-  "dependencies": { "viem": "^2.57.7" }
+  "scripts": {
+    "start": "node guard-keeper.mjs",
+    "stats": "node mezo-stats.mjs",
+    "e2e": "node e2e.mjs"
+  },
+  "dependencies": {
+    "viem": "^2.57.7"
+  }
 }

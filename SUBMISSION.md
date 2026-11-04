@@ -38,6 +38,7 @@ What shipped (CoilRouter v2, 0xa9ad…7a92, source-verified):
 - Fixed: pending redistribution was double-counted (contract and app). One-click claim of leftover BTC after a redemption. Recovery Mode and minimum debt read on-chain.
 - App: Proof page (every flow with its tx), Try-it onboarding for outside testers, wallet counter, no forced intro.
 - Security: threat model with each rule mapped to a test; 85 unit/fuzz/invariant/edge tests (random flows incl. pool attacks, 96.9% line coverage); 6 fork tests on live testnet (real sMUSD, a Shield repaying a real trove with a real RepayMUSD signature, the 350-trove queue); CI on every push.
+- Full end-to-end run on testnet (docs/e2e-testnet.md): coil, Reserve, leverage up, deleverage, incentives, unwind, with Shield, Recoil and Guard all fired by the keeper on its own.
 - Why not mainnet: the mainnet BTC/MUSD pool holds ~0.75 BTC, so a 0.1 BTC 3x position would pay ~37% over mid. Coil launches there once the pool is deep; routing part of the fee to its gauge is the plan.
 
 Business: 0.10% opening fee (capped 0.5% on-chain), keeper bounties, and every Coil trove pays MUSD interest that flows to sMUSD savers through MUSD's PCV.

@@ -13,7 +13,7 @@
  *   optional: FROM_BLOCK=<router deploy block>  POLL_SECONDS=15  DRY_RUN=1  ONCE=1 (single pass)
  *             RUN_FOR_SECONDS=300 (poll for that long, then exit: used by the self-chaining GitHub Action)
  */
-import { createPublicClient, createWalletClient, defineChain, http, parseAbi, formatEther } from 'viem'
+import { createPublicClient, createWalletClient, defineChain, http, parseAbi, formatEther, encodeFunctionData } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 
 const mezoTestnet = defineChain({
@@ -80,8 +80,12 @@ async function fire(kind, user, functionName, args, unit) {
     })
     console.log(`[${kind}] ${user} is due, bounty ≈ ${formatEther(result)} ${unit}`)
     if (DRY) return
-    const hash = await wallet.writeContract(request)
-    await pub.waitForTransactionReceipt({ hash })
+    // Hints are zero, so MUSD's SortedTroves walks the list: leave a 50% gas margin so an inner
+    // call can't run out of gas (63/64 rule) while the estimate still passes.
+    const gas = await pub.estimateGas({ account, to: ROUTER, data: encodeFunctionData({ abi, functionName, args }) })
+    const hash = await wallet.writeContract({ ...request, gas: (gas * 3n) / 2n })
+    const rc = await pub.waitForTransactionReceipt({ hash })
+    if (rc.status !== 'success') throw new Error(`reverted on-chain: ${hash}`)
     console.log(`[${kind}] fired for ${user}: https://explorer.test.mezo.org/tx/${hash}`)
     fired++
   } catch (e) {

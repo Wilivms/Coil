@@ -97,6 +97,8 @@ forge test --match-path "test/fork/*" --fork-url https://rpc.test.mezo.org -vv  
 
 - **Invariants** (`test/invariant/`): random sequences of coils, unwinds, deleverages, Guard and Shield fires, Reserve moves, yield, redistributions, Recovery Mode, market moves and pool attacks. The router never keeps BTC or loose MUSD, never owns a trove, and the Reserve stays fully backed.
 - **Fork** (`test/fork/`): open and close a real trove; open at the live ~2% oracle gap; Reserve in the **real** sMUSD and a Shield repaying the **real** trove through a **real** `RepayMUSD` signature; walk the real 350-trove redemption queue; refinance + leverage up a real trove with two signatures in one tx; incentives landing in the **real** MUSD/BTC gauge contract.
+- **On-chain end to end** ([`docs/e2e-testnet.md`](docs/e2e-testnet.md)): all 13 steps live on testnet, Shield, Recoil and Guard fired by the keeper on its own.
+- **Report** ([`docs/security/testing.md`](docs/security/testing.md)): 91 tests, deep fuzz profile, 96.9% line coverage, Slither triage.
 - **Signatures** (`SignatureCompat.t.sol`): the app's viem digests equal MUSD's for all four signed operations.
 
 ## Deploy
