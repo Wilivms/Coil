@@ -62,7 +62,7 @@ export function ProofPage() {
         </div>
 
         <section className="panel" style={{ marginBottom: 24 }}>
-          <div className="panel__h"><h3>Contracts</h3><span className="pill" data-s="ok">Source-verified</span></div>
+          <div className="panel__h"><h2>Contracts</h2><span className="pill" data-s="ok">Source-verified</span></div>
           <div className="panel__b">
             <div className="rows">
               {COIL_ROUTER && <div className="row"><span>CoilRouter v3 (Wave 2, current)</span><a className="mono" href={`${explorerAddr(COIL_ROUTER)}#code`} target="_blank" rel="noreferrer">{shortAddr(COIL_ROUTER)} ↗</a></div>}
@@ -79,7 +79,7 @@ export function ProofPage() {
         </section>
 
         <section className="panel" style={{ marginBottom: 24 }}>
-          <div className="panel__h"><h3>Every flow, run on-chain</h3><span className="mono muted">first occurrence in Wave 2 (v2 or v3)</span></div>
+          <div className="panel__h"><h2>Every flow, run on-chain</h2><span className="mono muted">first occurrence in Wave 2 (v2 or v3)</span></div>
           <div className="panel__b">
             <ol className="act act--steps">
               {MILESTONES.map((m) => {
@@ -99,7 +99,7 @@ export function ProofPage() {
 
         <section className="panel" style={{ marginBottom: 24 }}>
           <div className="panel__h">
-            <h3>Tests that back the claims</h3>
+            <h2>Tests that back the claims</h2>
             <a className="mono" href={`${REPO}/actions/workflows/ci.yml`} target="_blank" rel="noreferrer">CI runs ↗</a>
           </div>
           <div className="panel__b">
@@ -116,7 +116,7 @@ export function ProofPage() {
 
         <section className="panel" style={{ marginBottom: 24 }}>
           <div className="panel__h">
-            <h3>Always-on keeper</h3>
+            <h2>Always-on keeper</h2>
             <a className="mono" href={`${REPO}/actions/workflows/keeper.yml`} target="_blank" rel="noreferrer">keeper runs ↗</a>
           </div>
           <div className="panel__b">
@@ -127,7 +127,7 @@ export function ProofPage() {
         </section>
 
         <section className="panel" style={{ marginBottom: 48 }}>
-          <div className="panel__h"><h3>Why redemptions</h3><span className="mono muted">Mezo mainnet, read on-chain</span></div>
+          <div className="panel__h"><h2>Why redemptions</h2><span className="mono muted">Mezo mainnet, read on-chain</span></div>
           <div className="panel__b">
             <div className="rows">
               <div className="row"><span>Redemptions vs liquidations, all time</span><span>1,176 vs 28</span></div>

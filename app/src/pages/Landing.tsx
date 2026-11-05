@@ -180,10 +180,10 @@ export function Landing() {
             <h2 className="widen">The rules the loop lives by.</h2>
           </div>
           <div className="rules">
-            <div className="rule"><div className="rule__fig num">110%</div><div><h4>Liquidation</h4><p>Below a 110% ratio anyone can liquidate the trove and its collateral is gone. Coil refuses to open under 115% after price impact.</p></div></div>
-            <div className="rule"><div className="rule__fig num">0.75%</div><div><h4>Redemption</h4><p>Holders redeem MUSD for BTC from the lowest ratios first. A tight loop is first in line; the radar shows how much cover you have.</p></div></div>
-            <div className="rule"><div className="rule__fig num">150%</div><div><h4>Recovery mode</h4><p>If the whole system drops under 150%, borrowing rules tighten and closing is paused. Coil shows the system ratio live.</p></div></div>
-            <div className="rule"><div className="rule__fig num">1,800</div><div><h4>Minimum debt</h4><p>A trove carries at least 1,800 MUSD of debt plus a 200 MUSD gas reserve. At 3× that means a deposit of roughly 0.012 BTC or more.</p></div></div>
+            <div className="rule"><div className="rule__fig num">110%</div><div><h3>Liquidation</h3><p>Below a 110% ratio anyone can liquidate the trove and its collateral is gone. Coil refuses to open under 115% after price impact.</p></div></div>
+            <div className="rule"><div className="rule__fig num">0.75%</div><div><h3>Redemption</h3><p>Holders redeem MUSD for BTC from the lowest ratios first. A tight loop is first in line; the radar shows how much cover you have.</p></div></div>
+            <div className="rule"><div className="rule__fig num">150%</div><div><h3>Recovery mode</h3><p>If the whole system drops under 150%, borrowing rules tighten and closing is paused. Coil shows the system ratio live.</p></div></div>
+            <div className="rule"><div className="rule__fig num">1,800</div><div><h3>Minimum debt</h3><p>A trove carries at least 1,800 MUSD of debt plus a 200 MUSD gas reserve. At 3× that means a deposit of roughly 0.012 BTC or more.</p></div></div>
           </div>
           <div className="cta-row" style={{ marginTop: 48 }}>
             <a className="btn magnetic" href="#/app">Open the app <Arrow /></a>

@@ -59,7 +59,7 @@ export function TryPage() {
               <div className="panel__b" style={{ display: 'grid', gridTemplateColumns: '40px 1fr auto', gap: 16, alignItems: 'center' }}>
                 <span className="mono" style={{ fontSize: 22, color: s.done ? 'var(--ok, #3fb950)' : 'var(--accent)' }}>{s.done ? '✓' : i + 1}</span>
                 <div>
-                  <h3 style={{ margin: '0 0 4px' }}>{s.title}</h3>
+                  <h2 style={{ margin: '0 0 4px' }}>{s.title}</h2>
                   <p className="field__hint" style={{ margin: 0 }}>{s.body}</p>
                 </div>
                 <div>{s.cta}</div>

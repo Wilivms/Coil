@@ -75,13 +75,14 @@ export function AppPage() {
 
   return (
     <main className="app">
+      <h1 className="sr-only">Coil app: open, protect and close a leveraged MUSD trove</h1>
       <div className="wrap">
         <MarketBar m={m} live={!!marketQ.data} error={marketQ.isError} />
         <div className="app__grid" style={{ marginTop: 24 }}>
           <div className="stack">
             {!!surplusQ.data && surplusQ.data > 0n && (
               <section className="panel">
-                <div className="panel__h"><h3>BTC to claim</h3><span className="pill" data-s="watch">Trove closed by MUSD</span></div>
+                <div className="panel__h"><h2>BTC to claim</h2><span className="pill" data-s="watch">Trove closed by MUSD</span></div>
                 <div className="panel__b">
                   <p className="field__hint" style={{ margin: 0 }}>
                     A redemption or a Recovery Mode liquidation closed your trove and left {fmtBtc(fromWad(surplusQ.data), 5)} BTC in MUSD's surplus pool. It is yours: claim it in one transaction.
@@ -211,7 +212,7 @@ function BuildPanel({ m, plan, lev, setLev, maxLev, depositStr, setDepositStr, a
   return (
     <section className="panel panel--sticky" aria-labelledby="build-h">
       <div className="panel__h">
-        <h3 id="build-h">Build a position</h3>
+        <h2 id="build-h">Build a position</h2>
         <span className="pill" data-s={plan.status}>{STATUS_COPY[plan.status]}</span>
       </div>
       <div className="panel__b">
@@ -320,7 +321,7 @@ function ManagePanel({ m, trove, actions }: {
   return (
     <section className="panel panel--sticky" aria-labelledby="manage-h">
       <div className="panel__h">
-        <h3 id="manage-h">Your position</h3>
+        <h2 id="manage-h">Your position</h2>
         <span className="pill" data-s="ok">Live trove</span>
       </div>
       <div className="panel__b">
@@ -424,7 +425,7 @@ function RecoilPanel({ m, position, live, recoil, actions }: {
   return (
     <section className="panel" aria-labelledby="recoil-h">
       <div className="panel__h">
-        <h3 id="recoil-h">Recoil · back to target leverage</h3>
+        <h2 id="recoil-h">Recoil · back to target leverage</h2>
         {armed ? (
           <span className="pill" data-s={recoil!.fresh ? (recoil!.triggered ? 'danger' : 'ok') : 'watch'}>
             {recoil!.fresh ? (recoil!.triggered ? 'Triggered, waiting for a keeper' : `Armed at ${fmtPct(recoil!.triggerIcr, 0)}`) : 'Stale, sign again'}
@@ -494,7 +495,7 @@ function PositionPanel({ position, cr, liq, price, trove, interestBps, guardCr }
   if (!position) {
     return (
       <section className="panel">
-        <div className="panel__h"><h3>Position</h3><span className="pill" data-s="idle">Nothing yet</span></div>
+        <div className="panel__h"><h2>Position</h2><span className="pill" data-s="idle">Nothing yet</span></div>
         <div className="empty">
           <span>Enter a deposit on the left. The cockpit fills with a preview of that position, using live Mezo data.</span>
         </div>
@@ -505,7 +506,7 @@ function PositionPanel({ position, cr, liq, price, trove, interestBps, guardCr }
   return (
     <section className="panel" aria-labelledby="pos-h">
       <div className="panel__h">
-        <h3 id="pos-h">{trove ? 'Your trove' : 'Preview of this plan'}</h3>
+        <h2 id="pos-h">{trove ? 'Your trove' : 'Preview of this plan'}</h2>
         <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {trove && address && <a className="mono muted" href={explorerAddr(address)} target="_blank" rel="noreferrer">{shortAddr(address)}</a>}
           <span className="pill" data-s={trove ? state : 'accent'}>{trove ? label : 'Preview'}</span>
@@ -548,7 +549,7 @@ function RiskPanel({ price, liq, vol, histVol, setVol, volOverride, closes, step
   return (
     <section className="panel" aria-labelledby="risk-h">
       <div className="panel__h">
-        <h3 id="risk-h">Liquidation odds</h3>
+        <h2 id="risk-h">Liquidation odds</h2>
         <div className="tabs" role="group" aria-label="Horizon">
           {horizons.map((d) => <button key={d} aria-pressed={d === days} onClick={() => setDays(d)}>{d} days</button>)}
         </div>
@@ -605,7 +606,7 @@ function RadarPanel({ radar, loading, cr, self }: {
   return (
     <section className="panel" aria-labelledby="radar-h">
       <div className="panel__h">
-        <h3 id="radar-h">Redemption radar</h3>
+        <h2 id="radar-h">Redemption radar</h2>
         <span className="mono muted">{radar ? `${radar.troves.length} troves read live` : loading ? 'Reading every trove…' : 'Unavailable'}</span>
       </div>
       <div className="panel__b">
@@ -658,7 +659,7 @@ function GuardPanel({ m, position, trigger, setTrigger, lo, hi, live, guard, act
   return (
     <section className="panel" aria-labelledby="guard-h">
       <div className="panel__h">
-        <h3 id="guard-h">Guard · signed stop-loss</h3>
+        <h2 id="guard-h">Guard · signed stop-loss</h2>
         {armed ? (
           <span className="pill" data-s={guard!.fresh ? (guard!.triggered ? 'danger' : 'ok') : 'watch'}>
             {guard!.fresh ? (guard!.triggered ? 'Triggered, waiting for a keeper' : `Armed at ${fmtUsd(fromWad(guard!.triggerPrice))}`) : 'Stale, sign again'}
@@ -749,7 +750,7 @@ function ShieldPanel({ m, position, live, trigger, reserve, shield, actions }: {
   return (
     <section className="panel" aria-labelledby="shield-h">
       <div className="panel__h">
-        <h3 id="shield-h">Reserve and Shield · redemption protection</h3>
+        <h2 id="shield-h">Reserve and Shield · redemption protection</h2>
         {armed ? (
           <span className="pill" data-s={shield!.fresh ? (shield!.funded ? (shield!.byPrice || shield!.byQueue ? 'danger' : 'ok') : 'watch') : 'watch'}>
             {!shield!.fresh ? 'Stale, sign again' : !shield!.funded ? 'Armed, Reserve too low' : shield!.byPrice || shield!.byQueue ? 'Triggered, waiting for a keeper' : 'Armed'}
@@ -865,7 +866,7 @@ function ReplayPanel({ closes, startDay, stepDays, leverage, interestBps, source
   return (
     <section className="panel" aria-labelledby="replay-h">
       <div className="panel__h">
-        <h3 id="replay-h">Replay through history</h3>
+        <h2 id="replay-h">Replay through history</h2>
         <div className="tabs" role="group" aria-label="Period">
           {windows.map((w, k) => <button key={w.label} aria-pressed={k === i} onClick={() => setI(k)}>{w.label}</button>)}
         </div>
@@ -929,7 +930,7 @@ function ActivityPanel({ self }: { self?: `0x${string}` }) {
   return (
     <section className="panel" id="activity" aria-labelledby="act-h">
       <div className="panel__h">
-        <h3 id="act-h">On-chain activity</h3>
+        <h2 id="act-h">On-chain activity</h2>
         {q.data && <span className="mono muted">{q.data.wallets} wallets · {q.data.total} transactions · {q.data.fires} keeper fires</span>}
         <span className="act__tabs" role="group" aria-label="Filter">
           <button className={!mine ? 'is-on' : ''} onClick={() => setMine(false)}>All</button>

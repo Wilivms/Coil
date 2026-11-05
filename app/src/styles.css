@@ -7,7 +7,7 @@
   --sunken: #ecebe6;
   --ink: #111113;
   --ink-2: #5c5c65;
-  --ink-3: #8d8d95;
+  --ink-3: #6e6e76; /* 4.9:1 on white (WCAG AA) */
   --rule: #dcdbd5;
   --accent: #f7931a;
   --accent-ink: #a35400;
@@ -38,7 +38,7 @@
     --sunken: #1b1b1e;
     --ink: #ededea;
     --ink-2: #a0a0a8;
-    --ink-3: #6f6f78;
+    --ink-3: #8a8a93;
     --rule: #2a2a2e;
     --accent-ink: #ffb257;
     --accent-soft: rgba(247, 147, 26, 0.16);
@@ -59,7 +59,7 @@
   --sunken: #1b1b1e;
   --ink: #ededea;
   --ink-2: #a0a0a8;
-  --ink-3: #6f6f78;
+  --ink-3: #8a8a93;
   --rule: #2a2a2e;
   --accent-ink: #ffb257;
   --accent-soft: rgba(247, 147, 26, 0.16);
@@ -256,7 +256,7 @@ img, canvas, svg { max-width: 100%; }
 .rule:nth-child(odd) { padding-right: 32px; border-right: 1px solid var(--rule); }
 .rule:nth-child(even) { padding-left: 32px; }
 .rule__fig { font: 500 26px/1 var(--f-mono); letter-spacing: -0.03em; }
-.rule h4 { margin: 0 0 6px; font-size: 16px; }
+.rule h3 { margin: 0 0 6px; font-size: 16px; }
 .rule p { margin: 0; color: var(--ink-2); font-size: 14px; max-width: 50ch; }
 
 /* ticker */
@@ -276,7 +276,7 @@ footer.foot .wrap { display: flex; justify-content: space-between; gap: 16px; fl
 .stack { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); min-width: 0; }
 .panel__h { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
-.panel__h h3 { margin: 0; font-family: var(--f-display); font-size: 19px; font-weight: 700; font-variation-settings: 'wdth' 104; letter-spacing: -0.005em; }
+.panel__h h2, .panel__h h3 { margin: 0; font-family: var(--f-display); font-size: 19px; font-weight: 700; font-variation-settings: 'wdth' 104; letter-spacing: -0.005em; }
 .panel__b { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
 .panel--sticky { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 76px); }
 
@@ -354,8 +354,8 @@ input[type='range']:hover::-webkit-slider-thumb, input[type='range']:active::-we
 
 /* radar */
 .radar { display: flex; flex-direction: column; gap: 14px; }
-.radar__strip { position: relative; height: 120px; display: flex; align-items: flex-end; gap: 1px; border-bottom: 1px solid var(--ink); }
-.radar__strip i { flex: 1 1 0; background: var(--ink-3); opacity: 0.55; min-width: 1px; transform-origin: bottom; border-radius: 1px 1px 0 0; }
+.radar__strip { position: relative; height: 120px; display: flex; align-items: flex-end; gap: 1px; overflow-x: clip; border-bottom: 1px solid var(--ink); }
+.radar__strip i { flex: 1 1 0; background: var(--ink-3); opacity: 0.55; min-width: 0; transform-origin: bottom; border-radius: 1px 1px 0 0; }
 .radar__strip i.ahead { background: var(--ink); opacity: 0.85; }
 .radar__strip i.you { background: var(--accent); opacity: 1; }
 .radar__strip i.liq { background: var(--danger); opacity: 0.8; }
@@ -421,7 +421,11 @@ tr.sel td { background: var(--accent-soft); }
   .kpi:nth-child(-n + 2) { border-bottom: 1px solid var(--rule); }
 }
 @media (max-width: 640px) {
-  .nav__links { display: none; }
+  /* phones keep every page one tap away: links drop to a scrollable second row */
+  .nav__in { flex-wrap: wrap; height: auto; row-gap: 0; padding-top: 10px; }
+  .nav__links { order: 3; width: 100%; gap: 22px; overflow-x: auto; scrollbar-width: none; padding: 10px 0 12px; font-size: 12px; }
+  .nav__links::-webkit-scrollbar { display: none; }
+  .nav__links a { white-space: nowrap; display: inline-block; padding: 4px 0; }
   .strip__in { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .strip__cell { border-bottom: 1px solid var(--rule); }
   .strip__cell:nth-child(3) { border-right: 1px solid var(--rule); }
@@ -487,3 +491,7 @@ tr.sel td { background: var(--accent-soft); }
 .nav__link { font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--ink-2); background: none; border: 0; padding: 0; cursor: pointer; transition: color 0.2s; }
 .nav__link:hover { color: var(--ink); }
 #activity { scroll-margin-top: 90px; }
+
+/* a 350-trove queue needs every pixel on a phone */
+@media (max-width: 640px) { .radar__strip { gap: 0; } }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
