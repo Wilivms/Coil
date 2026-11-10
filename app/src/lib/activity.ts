@@ -28,7 +28,15 @@ export type ActivityItem = {
 
 type Router = 'v1' | 'v2' | 'v3' | 'v4'
 
-export type Activity = { items: ActivityItem[]; wallets: number; walletsV2: number; total: number; fires: number }
+/** Wallets the team controls. Their transactions are demos, not adoption, and are counted apart. */
+export const TEAM_WALLETS: Record<string, string> = {
+  '0xcfe7934d31f6c22ddafed72fc065d13eff48b368': 'founder (Rabby), treasury, v1 deployer',
+  '0x329a3f41fe946c06308f293c438eba2a689e34ab': 'ops: v2-v4 deployer and owner, E2E runs',
+  '0x09b657b9e093a7c13945adb2b1b5397d0e82e2a1': 'keeper (GitHub Actions)',
+}
+export const isTeam = (a: string) => a.toLowerCase() in TEAM_WALLETS
+
+export type Activity = { items: ActivityItem[]; wallets: number; walletsV2: number; outside: number; total: number; fires: number }
 
 type RawLog = { topics: Hex[]; data: Hex; block: bigint; tx: Hash; logIndex: number; time?: number }
 
@@ -109,6 +117,7 @@ export async function fetchActivity(): Promise<Activity> {
 
   const wallets = new Set(all.filter((i) => i.kind !== 'IncentivesPushed').map((i) => i.user.toLowerCase())).size
   const walletsV2 = new Set(all.filter((i) => i.router !== 'v1' && i.kind !== 'IncentivesPushed').map((i) => i.user.toLowerCase())).size
+  const outside = new Set(all.filter((i) => i.kind !== 'IncentivesPushed' && !isTeam(i.user)).map((i) => i.user.toLowerCase())).size
   const fires = all.filter((i) => i.kind === 'GuardFired' || i.kind === 'ShieldFired' || i.kind === 'RecoilFired').length
   const total = new Set(all.map((i) => i.tx)).size
 
@@ -122,7 +131,7 @@ export async function fetchActivity(): Promise<Activity> {
     ),
   )
   const items = all.map((i) => (i.time ? i : { ...i, time: stamps.get(i.block) }))
-  return { items, wallets, walletsV2, total, fires }
+  return { items, wallets, walletsV2, outside, total, fires }
 }
 
 /** Every CoilRouter event (v2 and v1), newest first, with explorer-ready tx hashes. */

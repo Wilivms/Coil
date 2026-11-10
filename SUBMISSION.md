@@ -44,15 +44,16 @@ NEW IN WAVE 2
 - Leverage up in one tx (adds a Refinance signature when MUSD's capacity is short) and Recoil, a signed leverage-up the keeper runs once the ratio is back.
 - 0.05% of each coil's debt to the MUSD/BTC gauge incentives, live on testnet.
 - v4, found by our own E2E: the testnet pool drifted 5.5% from the oracle, past our 5% cap, and every coil reverted. Now the borrower may accept a wider gap (max 20%) on a trade they send; the app sets it from the live quote and shows it. Keeper flows stay on 3%: on-chain, fireRecoil was refused at that gap. Full v4 E2E at the gap: docs/e2e-testnet.md.
+- Owner behind a 24 h OpenZeppelin timelock; its first proposal (the 0.10% fee) is public on-chain.
 - Also fixed: pending redistribution double count, claim of leftover BTC, an RPC gas estimate ~140x too low.
 
-TESTS: 101 unit/fuzz/invariant (96.9% line coverage, 10k-run fuzz) + 9 fork tests on the real Mezo contracts, testnet and mainnet: Shield repays a real mainnet trove from mainnet sMUSD. Slither triaged. CI on every push.
+TESTS: 107 unit/fuzz/invariant (96.9% line coverage, 10k-run fuzz) + 9 fork tests on the real Mezo contracts, testnet and mainnet: Shield repays a real mainnet trove from mainnet sMUSD. Slither triaged. CI on every push.
 
 WHY NOT MAINNET: the mainnet MUSD/BTC pool holds 0.48 BTC; a 0.05 BTC flash pays ~12% over fair. The mainnet fork test shows Coil refuses it. Reserve and Shield need no pool and already pass on a mainnet fork.
 
 BUSINESS: 0.10% open fee (0.5% cap), keeper bounties, interest to sMUSD via PCV.
 
-DISCLOSURE: testnet only, not audited. E2E txs are from the team's ops wallet. The owner can tune fee and default tolerance within hard caps; a timelock comes before mainnet.
+DISCLOSURE: testnet only, not audited. All E2E txs are from team wallets, listed on /proof; outside wallets are counted apart. The owner is a 24 h OpenZeppelin timelock (fee and default tolerance only, within hard caps).
 
 ## How it works
 
@@ -69,7 +70,7 @@ Solidity 0.8.24, Foundry (unit, fuzz, invariant and fork tests), EIP-712, Mezo P
 ## Future milestones
 
 1. Dec 2026: re-coil a trove back to its target leverage after a redemption; Shield ladders.
-2. Q1 2027: external audit, owner behind a timelock, fee routed to the BTC/MUSD gauge.
+2. Q1 2027: external audit, fee routed to the BTC/MUSD gauge.
 3. 2027: mainnet once the BTC/MUSD pool can take positions without double-digit impact.
 
 ## Team

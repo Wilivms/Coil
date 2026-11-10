@@ -14,7 +14,7 @@ Track 1 (DeFi) · Chain: Mezo testnet (31611) · Status: Wave 1 project, extende
    - On mainnet, MUSD's TroveManager has logged **1,176 redemptions against 28 liquidations**: 5.9M MUSD redeemed, 78.9 BTC taken from troves. Only **3 troves** are still open, for 29.5M MUSD in circulation.
    - Redemptions take the lowest-ratio troves first. A leveraged trove is exactly that, so for a Mezo borrower the risk that ends a position is a redemption, not a liquidation.
 2. **The product:** one transaction to open at 1.5–4×, one to lever up, one to close. Guard covers the price, Shield covers redemptions and Recovery Mode, Recoil restores leverage after them, the Reserve earns sMUSD yield while it waits.
-3. **The code:** [`contracts/src/CoilRouter.sol`](contracts/src/CoilRouter.sol), one immutable contract (plus a read-only [`CoilLens`](contracts/src/CoilLens.sol)), no proxy, no forwarder, no admin path to user funds.
+3. **The code:** [`contracts/src/CoilRouter.sol`](contracts/src/CoilRouter.sol), one immutable contract (plus a read-only [`CoilLens`](contracts/src/CoilLens.sol)), no proxy, no forwarder, no admin path to user funds; its owner is a 24 h [timelock](contracts/src/CoilTimelock.sol).
 4. **The proof:** `cd contracts && forge test` (unit, fuzz, invariants) and the fork suite against the real Mezo testnet contracts (below).
 5. **The security story:** [threat model](docs/security/threat-model.md), every rule mapped to the test that enforces it.
 
@@ -38,6 +38,7 @@ Every sentence of the Wave 1 review, and what answers it:
 | | |
 |---|---|
 | CoilRouter v4 (Wave 2, current) | [`0x17e056ef7e076Fbcb806dF9916552A26Da527F03`](https://explorer.test.mezo.org/address/0x17e056ef7e076Fbcb806dF9916552A26Da527F03#code) · source-verified · [deploy tx](https://explorer.test.mezo.org/tx/0x801797876e6e12c531836bf4fa93bc4a04021bd3a648b71aa6d38d5c4ab5abb1) (block 16701916) |
+| CoilTimelock (owner of v4, 24 h delay) | [`0x1e565FFC7400EbC7652839C2E49EFa0BD3179D33`](https://explorer.test.mezo.org/address/0x1e565FFC7400EbC7652839C2E49EFa0BD3179D33#code) · OpenZeppelin TimelockController, self-administered, anyone executes · first proposal: 0.10% opening fee ([schedule tx](https://explorer.test.mezo.org/tx/0x24f8364241596e901b97b4e2d83d1a7b3aa7ae2a5dc041d69713e07a8868c3d0)) |
 | CoilLens (status views) | [`0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5`](https://explorer.test.mezo.org/address/0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5#code) · source-verified |
 | CoilRouter v3 (Wave 2) | [`0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4`](https://explorer.test.mezo.org/address/0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4#code) · source-verified · full on-chain E2E, keeper fired Shield, Recoil and Guard |
 | CoilRouter v2 (Wave 2, first release) | [`0xa9adbe2e3ddfbd3795add019c8ea64a950777a92`](https://explorer.test.mezo.org/address/0xa9adbe2e3ddfbd3795add019c8ea64a950777a92) · source-verified · first keeper-fired Guard |

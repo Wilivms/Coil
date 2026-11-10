@@ -1,5 +1,5 @@
 import { COIL_LENS, COIL_ROUTER, explorerAddr, explorerTx, GAUGE_INCENTIVES, ROUTER_V1, ROUTER_V2, ROUTER_V3 } from '../lib/chain'
-import { DEPLOY_TX, useActivity, type ActivityItem, type ActivityKind } from '../lib/activity'
+import { DEPLOY_TX, TEAM_WALLETS, useActivity, type ActivityItem, type ActivityKind } from '../lib/activity'
 import { shortAddr } from '../lib/format'
 
 const REPO = 'https://github.com/Wilivms/Coil'
@@ -62,14 +62,27 @@ export function ProofPage() {
           <div className="kpi kpi--accent"><span className="mono">Wallets</span><span className="kpi__v">{q.data?.wallets ?? '…'}</span><span className="kpi__s">that used Coil (all versions)</span></div>
           <div className="kpi"><span className="mono">Transactions</span><span className="kpi__v">{q.data?.total ?? '…'}</span><span className="kpi__s">CoilRouter calls</span></div>
           <div className="kpi"><span className="mono">Keeper fires</span><span className="kpi__v">{q.data?.fires ?? '…'}</span><span className="kpi__s">Guards, Shields and Recoils run by the keeper</span></div>
-          <div className="kpi"><span className="mono">Wallets in Wave 2</span><span className="kpi__v">{q.data?.walletsV2 ?? '…'}</span><span className="kpi__s">since Nov 4, 2026</span></div>
+          <div className="kpi"><span className="mono">Outside wallets</span><span className="kpi__v">{q.data?.outside ?? '…'}</span><span className="kpi__s">not controlled by the team (listed below)</span></div>
         </div>
+
+        <section className="panel" style={{ marginBottom: 24 }}>
+          <div className="panel__h"><h2>Team wallets</h2><span className="pill" data-s="idle">Disclosed</span></div>
+          <div className="panel__b">
+            <p className="field__hint" style={{ marginTop: 0 }}>These belong to the team. Their transactions are demos and tests, not users, and the outside-wallet count leaves them out.</p>
+            <div className="rows">
+              {Object.entries(TEAM_WALLETS).map(([a, role]) => (
+                <div className="row" key={a}><span>{role}</span><a className="mono" href={explorerAddr(a)} target="_blank" rel="noreferrer">{shortAddr(a)} ↗</a></div>
+              ))}
+            </div>
+          </div>
+        </section>
 
         <section className="panel" style={{ marginBottom: 24 }}>
           <div className="panel__h"><h2>Contracts</h2><span className="pill" data-s="ok">Source-verified</span></div>
           <div className="panel__b">
             <div className="rows">
               {COIL_ROUTER && <div className="row"><span>CoilRouter v4 (Wave 2, current)</span><a className="mono" href={`${explorerAddr(COIL_ROUTER)}#code`} target="_blank" rel="noreferrer">{shortAddr(COIL_ROUTER)} ↗</a></div>}
+              <div className="row"><span>CoilTimelock: owner of v4, every change waits 24 h</span><a className="mono" href={`${explorerAddr('0x1e565FFC7400EbC7652839C2E49EFa0BD3179D33')}#code`} target="_blank" rel="noreferrer">0x1e56…9D33 ↗</a></div>
               <div className="row"><span>CoilLens (status views)</span><a className="mono" href={`${explorerAddr(COIL_LENS)}#code`} target="_blank" rel="noreferrer">{shortAddr(COIL_LENS)} ↗</a></div>
               <div className="row"><span>v4 deploy transaction (block 16701916)</span><a className="mono" href={explorerTx(V4_DEPLOY_TX)} target="_blank" rel="noreferrer">{shortAddr(V4_DEPLOY_TX)} ↗</a></div>
               <div className="row"><span>CoilRouter v3 (Wave 2: full on-chain E2E, keeper fired Shield, Recoil, Guard)</span><a className="mono" href={`${explorerAddr(ROUTER_V3)}#code`} target="_blank" rel="noreferrer">{shortAddr(ROUTER_V3)} ↗</a></div>

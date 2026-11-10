@@ -13,7 +13,28 @@
       "maxOwnDeviationBps": 2000,
       "feeBps": 0,
       "incentiveBps": 5,
-      "incentiveTarget": "0x75b6B35Fc78826A0B7E1f9c08bb7d84bd70D0ee1"
+      "incentiveTarget": "0x75b6B35Fc78826A0B7E1f9c08bb7d84bd70D0ee1",
+      "owner": "0x1e565FFC7400EbC7652839C2E49EFa0BD3179D33"
+    },
+    "CoilTimelock": {
+      "address": "0x1e565FFC7400EbC7652839C2E49EFa0BD3179D33",
+      "deployTx": "0x746696a63575721afd6af4555adb9ceb57eed5b796704970c7b49f8e2f9b83e6",
+      "delaySeconds": 86400,
+      "proposers": [
+        "0x329A3f41fe946c06308f293c438eBA2A689e34ab",
+        "0xcFe7934D31F6C22DDaFeD72FC065D13eFF48b368"
+      ],
+      "executors": "anyone",
+      "admin": "none (self-administered)",
+      "setOwnerTx": "0x63fb4ba89a8682053872a3c2d46c6ed2b9a0b4c1b4a1124f93340d687279b9a5",
+      "scheduled": [
+        {
+          "call": "setFee(10)",
+          "salt": "fee-0.10pct",
+          "tx": "0x24f8364241596e901b97b4e2d83d1a7b3aa7ae2a5dc041d69713e07a8868c3d0"
+        }
+      ],
+      "verified": "https://explorer.test.mezo.org/address/0x1e565FFC7400EbC7652839C2E49EFa0BD3179D33#code"
     },
     "CoilLens": {
       "address": "0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5",

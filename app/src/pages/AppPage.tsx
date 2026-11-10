@@ -434,13 +434,16 @@ function RecoilPanel({ m, position, live, recoil, actions }: {
   const plan = releverPlan({ ...m, price: toWad(price * (triggerIcr / crNow)) }, t, levNow, 1.25)
   const demo = releverPlan(m, t, levNow + 0.25, 1.05)
   const armed = recoil?.armed
+  // a keeper buys BTC for you only within the 3% bound; past it, Recoil waits
+  const gap = poolGap(m.reserveMusd, m.reserveBtc, m.price)
+  const held = gap * 10_000 > DEFAULT_DEVIATION_BPS
   return (
     <section className="panel" aria-labelledby="recoil-h">
       <div className="panel__h">
         <h2 id="recoil-h">Recoil · back to target leverage</h2>
         {armed ? (
           <span className="pill" data-s={recoil!.fresh ? (recoil!.triggered ? 'danger' : 'ok') : 'watch'}>
-            {recoil!.fresh ? (recoil!.triggered ? 'Triggered, waiting for a keeper' : `Armed at ${fmtPct(recoil!.triggerIcr, 0)}`) : 'Stale, sign again'}
+            {recoil!.fresh ? (recoil!.triggered ? (held ? 'Triggered, held by the 3% bound' : 'Triggered, waiting for a keeper') : `Armed at ${fmtPct(recoil!.triggerIcr, 0)}`) : 'Stale, sign again'}
           </span>
         ) : (
           <span className="pill" data-s="idle">Not armed</span>
@@ -463,6 +466,12 @@ function RecoilPanel({ m, position, live, recoil, actions }: {
           </div>
         ) : (
           <p className="note">{plan.reason}</p>
+        )}
+        {held && (
+          <p className="note">
+            Right now the pool prices BTC {fmtPct(gap, 1)} above MUSD's oracle, past the 3% bound a keeper is held to. A Recoil stays armed and fires once
+            the pool is back within 3%: nobody can buy BTC that dear on your behalf. To lever up now, use Leverage up, which you send yourself.
+          </p>
         )}
         <p className="field__hint" style={{ margin: 0 }}>
           When BTC rises, or a redemption shrinks your debt, your position loses leverage. Recoil is a signed leverage-up that the keeper runs once your ratio reaches the trigger, with the same price-feed bound as every Coil swap. Redemptions stop being a reason to watch the screen.

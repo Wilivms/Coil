@@ -15,6 +15,8 @@ jobs:
         working-directory: contracts
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
       - name: Build and size check (EIP-170)
         run: forge build --sizes
@@ -31,6 +33,8 @@ jobs:
         working-directory: contracts
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
       - name: Real MUSD, sMUSD, SortedTroves and MUSD/BTC pool
         run: forge test --match-path "test/fork/CoilFork.t.sol" --fork-url https://rpc.test.mezo.org -vv

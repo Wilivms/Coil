@@ -20,7 +20,7 @@ Coil has **no** forwarder or meta-transaction path, **no** proxy or upgrade, **n
 - **User**: signs typed data in the app; owns the trove.
 - **Keeper**: anyone. Calls `fireGuard` / `fireShield` for a bounty. Assumed hostile: may sandwich, reorder, or fire at the worst moment it can.
 - **Pool traders / MEV**: can move the MUSD/BTC pool price before and after any Coil transaction.
-- **Owner**: can set the fee (hard cap 0.50%), the oracle tolerance (hard cap 5%) and the treasury. Assumed honest but limited by code.
+- **Owner**: a 24 h timelock. Can set the fee (hard cap 0.50%), the default oracle tolerance (hard cap 5%), the treasury and the gauge incentives. Limited by code and by the delay.
 - **Mezo**: MUSD (BorrowerOperationsSignatures, TroveManager, SortedTroves, PriceFeed), the MUSD/BTC pool and sMUSD are trusted dependencies.
 
 ## Rules
@@ -92,7 +92,7 @@ Relever and Recoil add exactly the signed collateral and debt; every swap keeps 
 - **Fixed-amount signatures.** MUSD signs exact amounts, so a Guard/Shield repays what was signed even if the trove changed through unsigned operations (interest, redistribution). Status views and the app show the sizes before arming.
 - **Queue proof is bounded.** `MAX_QUEUE_STEPS = 200`. A trove deeper than that can't prove the redemption trigger; it is also far from redemption.
 - **Dependencies.** Reserve funds inherit the risk of Mezo's sMUSD vault; prices inherit MUSD's PriceFeed (it reverts when older than 60 s, which makes Coil revert too).
-- **Owner.** Can widen the tolerance to at most 5% and the fee to at most 0.50%. Planned: hand ownership to a timelock before any mainnet use.
+- **Owner.** Can widen the default tolerance to at most 5% and the fee to at most 0.50%. Since 11 Nov 2026 the owner of v4 is `CoilTimelock` (`0x1e565FFC7400EbC7652839C2E49EFa0BD3179D33`, OpenZeppelin TimelockController, 24 h delay, no admin role, anyone executes): every owner change is public a day before it applies. `CoilTimelock.t.sol`.
 
 ## Not in scope of this file
 
