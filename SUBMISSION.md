@@ -81,7 +81,7 @@ Wiliams Lopes: solo builder, Head of Events at De Vinci Blockchain, ESILV Paris.
 
 ## Video script (under 2:00)
 
-(0:00–0:12, slide "The problem") On Mezo mainnet, 1,176 positions were hit by redemptions and only 28 by liquidations. Leveraged troves are first in line. Coil is leverage built for that.
+(0:00–0:12, slide "The problem") On Mezo mainnet, 1,279 positions were hit by redemptions and only 28 by liquidations. Leveraged troves are first in line. Coil is leverage built for that.
 
 (0:12–0:20, the app, wallet connected) This is Coil on Mezo testnet. I open 0.02 BTC at 3x.
 
@@ -102,7 +102,7 @@ Wiliams Lopes: solo builder, Head of Events at De Vinci Blockchain, ESILV Paris.
 ## Mezo Discord post (Wave 2 progress)
 
 Coil, Wave 2 update 🧡 Leverage on Mezo that survives redemptions.
-- CoilRouter v2 is live on testnet and source-verified. Every swap is bounded by MUSD's PriceFeed.
+- CoilRouter v4 is live on testnet, source-verified, owned by a 24 h timelock. Every swap is bounded by MUSD's PriceFeed.
 - New: Reserve (MUSD in sMUSD) and Shield, a signed repay that fires when your trove nears the front of the redemption queue. It works in Recovery Mode.
 - Guard and Shield work on ANY MUSD trove, even one opened in the Mezo app. An always-on keeper fires them within about 15 s.
 Try it in 2 minutes: https://coil-mezo-blitz-bet.vercel.app/#/try

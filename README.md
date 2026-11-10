@@ -11,7 +11,7 @@ Track 1 (DeFi) · Chain: Mezo testnet (31611) · Status: Wave 1 project, extende
 ## Review in 5 minutes
 
 1. **The problem, measured on Mezo** (`cd keeper && npm ci && npm run stats` reprints every number with its block):
-   - On mainnet, MUSD's TroveManager has logged **1,176 redemptions against 28 liquidations**: 5.9M MUSD redeemed, 78.9 BTC taken from troves. Only **3 troves** are still open, for 29.5M MUSD in circulation.
+   - On mainnet, MUSD's TroveManager has logged **1,279 redemptions against 28 liquidations**: 5.94M MUSD redeemed, 79.6 BTC taken from troves. Only **4 troves** are still open, for 19M MUSD in circulation (10 Nov 2026).
    - Redemptions take the lowest-ratio troves first. A leveraged trove is exactly that, so for a Mezo borrower the risk that ends a position is a redemption, not a liquidation.
 2. **The product:** one transaction to open at 1.5–4×, one to lever up, one to close. Guard covers the price, Shield covers redemptions and Recovery Mode, Recoil restores leverage after them, the Reserve earns sMUSD yield while it waits.
 3. **The code:** [`contracts/src/CoilRouter.sol`](contracts/src/CoilRouter.sol), one immutable contract (plus a read-only [`CoilLens`](contracts/src/CoilLens.sol)), no proxy, no forwarder, no admin path to user funds; its owner is a 24 h [timelock](contracts/src/CoilTimelock.sol).

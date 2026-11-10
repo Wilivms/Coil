@@ -149,9 +149,9 @@ export function ProofPage() {
           <div className="panel__h"><h2>Why redemptions</h2><span className="mono muted">Mezo mainnet, read on-chain</span></div>
           <div className="panel__b">
             <div className="rows">
-              <div className="row"><span>Redemptions vs liquidations, all time</span><span>1,176 vs 28</span></div>
-              <div className="row"><span>MUSD redeemed / BTC taken from troves</span><span>5.9M MUSD / 78.9 BTC</span></div>
-              <div className="row"><span>Troves still open on mainnet</span><span>3</span></div>
+              <div className="row"><span>Redemptions vs liquidations, all time</span><span>1,279 vs 28</span></div>
+              <div className="row"><span>MUSD redeemed / BTC taken from troves</span><span>5.94M MUSD / 79.6 BTC</span></div>
+              <div className="row"><span>Troves still open on mainnet (10 Nov 2026)</span><span>4</span></div>
             </div>
             <p className="field__hint" style={{ margin: 0 }}>
               Reprint with the block number: <code>cd keeper &amp;&amp; npm ci &amp;&amp; npm run stats</code>.
