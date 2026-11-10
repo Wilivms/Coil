@@ -30,3 +30,31 @@ The first `relever` attempt ([`0xcc6e…50bd`](https://explorer.test.mezo.org/tx
 simulation and then reverted on-chain: with zero hints MUSD's SortedTroves walks the 350-trove list, and the bare gas
 estimate left an inner call short (63/64 rule). Fixed: the keeper and this script now send 1.5× the estimate; the app
 already computes real insert hints (`insertHints` in `app/src/lib/actions.ts`).
+
+## v4 run (11 Nov 2026): the pool 5.5% off the oracle
+
+On 10 Nov the testnet MUSD/BTC pool priced BTC 5.5% above MUSD's PriceFeed, past the 5% owner cap: v3 refused every
+coil and every leverage-up, for everyone. v4 (`0x17e0…7F03`) lets a borrower accept a wider gap for a trade **they send
+themselves** (`deviationBps`, at most 20%, the app sets it from the live quote and shows it before signing). Keeper-fired
+flows never get that choice. Same wallet, same script (`npm run e2e`), with the gap still there:
+
+| # | Step | Tx |
+|---|---|---|
+| 1 | coil at a 5.5% pool/oracle gap (own tolerance 7.5%) | [`0x936fa5b7…`](https://explorer.test.mezo.org/tx/0x936fa5b7dc50db1a97bdec55eb1e3dc07267deca43dae8b696700b56fcb2a7ea) |
+| 2 | depositReserve | [`0x792cfe2f…`](https://explorer.test.mezo.org/tx/0x792cfe2f555f1a32f978bb98c2327db4d9ee4da78cec26dc9321074188445cfd) |
+| 3 | armShield | [`0x67e4e76f…`](https://explorer.test.mezo.org/tx/0x67e4e76fefe50f182bf792c13f4822784381ace9cf904857d337da13f43b3291) |
+| 4 | fireShield | [`0x2b612f5f…`](https://explorer.test.mezo.org/tx/0x2b612f5f6041a62adceaae7d6ab21041d0fd445d9ef8ce0a748da8f2dabee075) |
+| 5 | relever at the same gap (own tolerance 7.5%) | [`0x053a71c3…`](https://explorer.test.mezo.org/tx/0x053a71c309604334e58598c3d1027176beed73f93148bc2937b4bcd5336c4768) |
+| 6 | armRecoil | [`0x0a1c8691…`](https://explorer.test.mezo.org/tx/0x0a1c86910c6d5b36ae42f49a74f016ede85ce83c067e866b519d8bca80f453a3) |
+| 7 | fireRecoil **refused** by the 3% bound: a keeper may not buy BTC 5.5% dear for the user | — |
+| 8 | disarmRecoil | [`0xe2d7843a…`](https://explorer.test.mezo.org/tx/0xe2d7843ad4c9a36244b02508b1ce73385d8b80c6037523950f4020c66bef599d) |
+| 9 | armGuard | [`0xd857d9b7…`](https://explorer.test.mezo.org/tx/0xd857d9b7f76c3df126e3f8245448911b9416d2e60ccbdfab14682d6155fc77b8) |
+| 10 | fireGuard (selling BTC into a pool where it is dear: within the bound) | [`0xb5a843f8…`](https://explorer.test.mezo.org/tx/0xb5a843f837c5c19a7040d72891ae7b8c949955190926c43f4987440bfda3a67c) |
+| 11 | deleverage | [`0xc3c957c7…`](https://explorer.test.mezo.org/tx/0xc3c957c78d6da562bd9cfea3f90617ddec95f4d36212b3b1729a8b8252bb1ab7) |
+| 12 | pushIncentives | [`0xd88e5252…`](https://explorer.test.mezo.org/tx/0xd88e52521cb669b77e63361ca9b579aba0c22ceadaf1788db7dccfca39aa6c69) |
+| 13 | withdrawReserve | [`0x61bb3d19…`](https://explorer.test.mezo.org/tx/0x61bb3d19416c24b1349b4c16e8529a3f7af2c1a9786b00faa511038f02587f1d) |
+| 14 | unwind | [`0x621863b3…`](https://explorer.test.mezo.org/tx/0x621863b3f004f20decbc5dc0eda568fd56497652462a1b7682e9e3f45da290e9) |
+
+Two more things this run found and fixed in the keeper and the script: the RPC once estimated 32,742 gas for a
+`fireShield` that used 4.7M (hintless SortedTroves walk), so sends now use a 1.5M floor; and 1.5× a large estimate can
+pass Mezo's 10M block limit, so sends are capped at 9.5M.

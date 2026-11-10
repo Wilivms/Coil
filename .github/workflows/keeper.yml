@@ -1,6 +1,6 @@
 name: Keeper
 
-# Always-on keeper for Coil Guards, Shields and Recoils on Mezo testnet (CoilRouter v3).
+# Always-on keeper for Coil Guards, Shields and Recoils on Mezo testnet (CoilRouter v4).
 # Each run polls the chain every 15 s for about 5 minutes, then starts the next run itself
 # (workflow_dispatch is the one event GITHUB_TOKEN may trigger), so the keeper never sleeps.
 # The 5-minute schedule restarts the chain if it ever breaks. Every run is public in the Actions
@@ -36,9 +36,9 @@ jobs:
       - run: npm ci
       - name: Keep for 5 minutes
         env:
-          COIL_ROUTER: ${{ vars.COIL_ROUTER || '0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4' }}
-          COIL_LENS: ${{ vars.COIL_LENS || '0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353' }}
-          FROM_BLOCK: ${{ vars.COIL_ROUTER_BLOCK || '16559650' }}
+          COIL_ROUTER: ${{ vars.COIL_ROUTER || '0x17e056ef7e076Fbcb806dF9916552A26Da527F03' }}
+          COIL_LENS: ${{ vars.COIL_LENS || '0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5' }}
+          FROM_BLOCK: ${{ vars.COIL_ROUTER_BLOCK || '16701916' }}
           KEEPER_PRIVATE_KEY: ${{ secrets.KEEPER_PRIVATE_KEY }}
           RUN_FOR_SECONDS: '290'
           POLL_SECONDS: '15'

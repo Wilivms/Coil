@@ -271,4 +271,92 @@ contract CoilEdgesTest is CoilBase {
         router.harvest();
         assertEq(router.accYieldPerShare(), 0);
     }
+
+    // ------------------------------------------------------------ the borrower's own tolerance (v4)
+
+    /// Live on testnet on 10 Nov 2026: the pool sat 5.5% above the PriceFeed after a fast BTC drop,
+    /// so every open reverted even at the 5% hard cap. A borrower can now accept that gap for
+    /// their own call; the signed amounts still bound what they pay.
+    function test_ownTolerance_coilThroughAStandingGap() public {
+        feed.setPrice(75_800e18); // pool at 80k: BTC costs ~5.5% more than the oracle says
+        (uint256 totalColl, uint256 debt) = _plan(1e18, 3e18);
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _signOpen(totalColl, debt, deadline);
+        vm.prank(alice);
+        router.coil{value: 1e18}(totalColl, debt, address(0), address(0), sig, deadline, 700);
+        assertEq(troves.getTroveStatus(alice), 1);
+    }
+
+    function test_ownTolerance_stillBoundsTheSwap() public {
+        feed.setPrice(72_000e18); // an 11% gap is past the 7% this borrower accepts
+        (uint256 totalColl, uint256 debt) = _plan(1e18, 3e18);
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _signOpen(totalColl, debt, deadline);
+        vm.prank(alice);
+        vm.expectPartialRevert(CoilRouter.PriceDeviation.selector);
+        router.coil{value: 1e18}(totalColl, debt, address(0), address(0), sig, deadline, 700);
+    }
+
+    function test_ownTolerance_capped() public {
+        vm.prank(alice);
+        vm.expectRevert(CoilRouter.BadParam.selector);
+        router.unwind(hex"01", block.timestamp + 1, 0, 2001);
+    }
+
+    /// Closing must never be trapped: BTC jumped, the pool lags below the oracle, so selling BTC
+    /// to the pool looks >3% cheap. The default refuses; the owner of the position can still leave.
+    function test_ownTolerance_unwindWhenPoolLagsBelowOracle() public {
+        _coil(1e18, 3e18);
+        feed.setPrice(86_000e18);
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _signClose(deadline);
+        vm.prank(alice);
+        uint256 out = router.unwind(sig, deadline, 0, 1000);
+        assertGt(out, 0);
+        assertEq(troves.getTroveStatus(alice), 2);
+    }
+
+    function test_defaultTolerance_unwindRefusedWhenPoolLags() public {
+        _coil(1e18, 3e18);
+        feed.setPrice(86_000e18);
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _signClose(deadline);
+        vm.prank(alice);
+        vm.expectPartialRevert(CoilRouter.PriceDeviation.selector);
+        router.unwind(sig, deadline, 0);
+    }
+
+    /// A keeper is never given the borrower's wider tolerance: with the pool 5.5% under the oracle
+    /// on the sell side, a Guard does not fire, whatever its owner used for their own calls.
+    function test_keeperFlowsKeepTheHardBound() public {
+        _coil(1e18, 3e18);
+        uint256 repay = 50_000e18;
+        uint256 w = (router.quoteBtcForMusd(repay) * 120) / 100;
+        uint64 deadline = uint64(block.timestamp + 1 days);
+        bytes memory sig = _signAdjust(w, repay, deadline);
+        vm.prank(alice);
+        router.armGuard(90_000e18, uint128(w), uint128(repay), 1, 0, deadline, sig);
+        feed.setPrice(85_000e18); // triggered, but the pool pays 80k for BTC worth 85k
+        vm.prank(keeper);
+        vm.expectPartialRevert(CoilRouter.PriceDeviation.selector);
+        router.fireGuard(alice, address(0), address(0));
+    }
+
+    function test_ownTolerance_releverAndDeleverage() public {
+        _coil(1e18, 2e18);
+        feed.setPrice(75_800e18);
+        uint256 add = 0.3e18;
+        uint256 debt = (router.quoteMusdForBtc(add) * 1005) / 1000;
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory sig = _signRelever(add, debt, deadline);
+        vm.prank(alice);
+        router.relever(add, debt, address(0), address(0), sig, "", deadline, 0, 700);
+        feed.setPrice(86_000e18);
+        uint256 repay = 20_000e18;
+        uint256 w = (router.quoteBtcForMusd(repay) * 105) / 100;
+        sig = _signAdjust(w, repay, deadline);
+        vm.prank(alice);
+        router.deleverage(w, repay, address(0), address(0), sig, deadline, 0, 1000);
+        assertEq(address(router).balance, 0);
+    }
 }

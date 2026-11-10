@@ -30,14 +30,16 @@ Every sentence of the Wave 1 review, and what answers it:
 | "get wallets other than your deployer using the router" | Guard and Shield now work on **any** MUSD trove, not only Coil's; [Try-it onboarding](https://coil-mezo-blitz-bet.vercel.app/#/try) and a live wallet counter on the [Proof page](https://coil-mezo-blitz-bet.vercel.app/#/proof) | `test_guard_worksOnTroveNotOpenedWithCoil` |
 | "verify CoilRouter on the Mezo explorer" | v2 source-verified on Blockscout | [code tab](https://explorer.test.mezo.org/address/0xa9adbe2e3ddfbd3795add019c8ea64a950777a92#code) |
 | "Cut the demo video to 2 minutes, and let visitors reach the app without the drawing intro" | Video under 2:00; the site opens straight, the intro is opt-in at `#/pitch` | |
+| (found in Wave 2) the testnet pool drifted 5.5% from MUSD's oracle, past the 5% cap: every coil reverted | **v4**: a borrower may accept a wider gap (≤ 20%) on a trade they send, set from the live quote and shown before signing; Guard and Recoil stay on the 3% bound | `CoilOwnTolerance.t.sol`, [v4 E2E at the gap](docs/e2e-testnet.md) |
 | Raised across many Wave 1 reviews: double-counted pending redistribution, redemptions, `claimCollateral` | `closeAmount` and the app read MUSD's totals once; Shield's redemption trigger; one-click claim of leftover BTC after a redemption | `test_closeAmount_doesNotDoubleCountPending` |
 
 ## Live on Mezo testnet
 
 | | |
 |---|---|
-| CoilRouter v3 (Wave 2, current) | [`0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4`](https://explorer.test.mezo.org/address/0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4#code) · source-verified · [deploy tx](https://explorer.test.mezo.org/tx/0x927811a52dff769acd0458599026da14aa6ec1692012e75556ea5c19644193eb) (block 16559650) |
-| CoilLens (status views) | [`0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353`](https://explorer.test.mezo.org/address/0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353#code) · source-verified |
+| CoilRouter v4 (Wave 2, current) | [`0x17e056ef7e076Fbcb806dF9916552A26Da527F03`](https://explorer.test.mezo.org/address/0x17e056ef7e076Fbcb806dF9916552A26Da527F03#code) · source-verified · [deploy tx](https://explorer.test.mezo.org/tx/0x801797876e6e12c531836bf4fa93bc4a04021bd3a648b71aa6d38d5c4ab5abb1) (block 16701916) |
+| CoilLens (status views) | [`0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5`](https://explorer.test.mezo.org/address/0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5#code) · source-verified |
+| CoilRouter v3 (Wave 2) | [`0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4`](https://explorer.test.mezo.org/address/0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4#code) · source-verified · full on-chain E2E, keeper fired Shield, Recoil and Guard |
 | CoilRouter v2 (Wave 2, first release) | [`0xa9adbe2e3ddfbd3795add019c8ea64a950777a92`](https://explorer.test.mezo.org/address/0xa9adbe2e3ddfbd3795add019c8ea64a950777a92) · source-verified · first keeper-fired Guard |
 | CoilRouter v1 (Wave 1) | [`0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16`](https://explorer.test.mezo.org/address/0x46a1B46016cF0C0E328Aa5D304F2f11257B21A16) |
 | MUSD/BTC pool | [`0xd16A…6AA9`](https://explorer.test.mezo.org/address/0xd16A5Df82120ED8D626a1a15232bFcE2366d6AA9) (flash lender) |
@@ -76,7 +78,7 @@ Every sentence of the Wave 1 review, and what answers it:
 
 ## Why not mainnet yet
 
-Mainnet's MUSD/BTC pool holds about 0.75 BTC. A 0.1 BTC position at 3× would pay roughly 37% over the pool's mid price there, against 0.3% on testnet (`npm run stats`). Coil would launch on mainnet only once that pool is deep enough; that is why a share of every coil already goes to the pool's gauge incentives.
+Mainnet's MUSD/BTC pool holds about 0.48 BTC (10 Nov 2026). A 0.1 BTC position at 3× would pay roughly 72% over the pool's mid price there, against 0.3% on testnet (`npm run stats`). Coil would launch on mainnet only once that pool is deep enough; that is why a share of every coil already goes to the pool's gauge incentives.
 
 ## Repository
 
@@ -92,13 +94,15 @@ docs/        Threat model
 ```bash
 cd contracts
 forge test                                                  # unit, fuzz, invariants (mocks mirror Mezo's pool and MUSD signatures)
-forge test --match-path "test/fork/*" --fork-url https://rpc.test.mezo.org -vv   # the real Mezo testnet
+forge test --match-path "test/fork/CoilFork.t.sol" --fork-url mezo_testnet -vv          # the real Mezo testnet
+forge test --match-path "test/fork/CoilMainnetFork.t.sol" --fork-url mezo_mainnet -vv   # the real Mezo mainnet (read-only)
 ```
 
 - **Invariants** (`test/invariant/`): random sequences of coils, unwinds, deleverages, Guard and Shield fires, Reserve moves, yield, redistributions, Recovery Mode, market moves and pool attacks. The router never keeps BTC or loose MUSD, never owns a trove, and the Reserve stays fully backed.
 - **Fork** (`test/fork/`): open and close a real trove; open at the live ~2% oracle gap; Reserve in the **real** sMUSD and a Shield repaying the **real** trove through a **real** `RepayMUSD` signature; walk the real 350-trove redemption queue; refinance + leverage up a real trove with two signatures in one tx; incentives landing in the **real** MUSD/BTC gauge contract.
 - **On-chain end to end** ([`docs/e2e-testnet.md`](docs/e2e-testnet.md)): all 13 steps live on testnet, Shield, Recoil and Guard fired by the keeper on its own.
 - **Report** ([`docs/security/testing.md`](docs/security/testing.md)): 91 tests, deep fuzz profile, 96.9% line coverage, Slither triage.
+- **Mainnet fork** (`test/fork/CoilMainnetFork.t.sol`, `--fork-url mezo_mainnet`): Reserve in the **real mainnet** sMUSD and a Shield repaying a **real mainnet** trove; the mainnet redemption queue walked; and a coil on the shallow mainnet pool **refused** by the oracle bound (it would pay ~12% over fair for 0.05 BTC).
 - **Signatures** (`SignatureCompat.t.sol`): the app's viem digests equal MUSD's for all four signed operations.
 
 ## Deploy

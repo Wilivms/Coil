@@ -16,8 +16,8 @@ const chain = defineChain({
   id: 31611, name: 'Mezo Testnet', nativeCurrency: { name: 'Bitcoin', symbol: 'BTC', decimals: 18 },
   rpcUrls: { default: { http: [process.env.RPC_URL ?? 'https://rpc.test.mezo.org'] } },
 })
-const ROUTER = '0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4'
-const LENS = '0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353'
+const ROUTER = '0x17e056ef7e076Fbcb806dF9916552A26Da527F03'
+const LENS = '0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5'
 const BOS = '0xD757e3646AF370b15f32EB557F0F8380Df7D639e'
 const TM = '0xE47c80e8c23f6B4A1aE41c34837a0599D5D16bb0'
 const FEED = '0x86bCF0841622a5dAC14A313a15f96A95421b9366'
@@ -32,12 +32,14 @@ const pub = createPublicClient({ chain, transport: http() })
 const wallet = createWalletClient({ account, chain, transport: http() })
 
 const router = parseAbi([
-  'function coil(uint256,uint256,address,address,bytes,uint256) payable returns (uint256)',
-  'function relever(uint256,uint256,address,address,bytes,bytes,uint256,uint256) returns (uint256)',
+  'function coil(uint256,uint256,address,address,bytes,uint256,uint16) payable returns (uint256)',
+  'function relever(uint256,uint256,address,address,bytes,bytes,uint256,uint256,uint16) returns (uint256)',
   'function armRecoil(uint128,uint128,uint128,uint16,uint64,bytes,bytes)',
   'function fireRecoil(address,address,address) returns (uint256)',
-  'function unwind(bytes,uint256,uint256) returns (uint256)',
-  'function deleverage(uint256,uint256,address,address,bytes,uint256,uint256) returns (uint256)',
+  'function disarmRecoil()',
+  'function unwind(bytes,uint256,uint256,uint16) returns (uint256)',
+  'function deleverage(uint256,uint256,address,address,bytes,uint256,uint256,uint16) returns (uint256)',
+  'function closeAmount(address) view returns (uint256)',
   'function armGuard(uint128,uint128,uint128,uint128,uint16,uint64,bytes)',
   'function fireGuard(address,address,address) returns (uint256)',
   'function depositReserve(uint256)',
@@ -86,13 +88,26 @@ async function send(label, address, abi, functionName, args, value) {
   const { request } = await pub.simulateContract({ account, address, abi, functionName, args, value })
   // MUSD's SortedTroves walks the list without hints; leave room so an inner call can't run out of gas
   const gas = await pub.estimateGas({ account, to: address, data: encodeFunctionData({ abi, functionName, args }), value })
-  const hash = await wallet.writeContract({ ...request, gas: (gas * 3n) / 2n })
+  const hash = await wallet.writeContract({ ...request, gas: min(max((gas * 3n) / 2n, GAS_FLOOR), GAS_CAP) })
   const rc = await pub.waitForTransactionReceipt({ hash })
   if (rc.status !== 'success') throw new Error(`${label} reverted: ${hash}`)
   console.log(`✓ ${label.padEnd(22)} ${hash}  gas ${rc.gasUsed}`)
   log.push({ step: label, tx: hash, block: Number(rc.blockNumber), by: 'e2e' })
   return rc
 }
+// v4: the borrower's own PriceFeed tolerance for a trade they send (same rule as app/src/lib/tolerance.ts)
+function tol(paid, fair) {
+  const need = Number(((paid - fair) * 10_000n) / fair) + 75
+  return need <= 300 ? 0 : Math.min(Math.ceil(need / 25) * 25, 2000)
+}
+const buyTol = async (btc) => tol(await r('quoteMusdForBtc', [btc]), (btc * (await price())) / WAD)
+const sellTol = async (m) => tol(((await r('quoteBtcForMusd', [m])) * (await price())) / WAD, m)
+// The RPC's gas estimate has come back far too low right after a state change (32,742 gas on a
+// fireShield that needs ~600k): never send less than this. Only gas used is paid.
+const GAS_FLOOR = 1_500_000n
+const max = (a, b) => (a > b ? a : b)
+const min = (a, b) => (a < b ? a : b)
+const GAS_CAP = 9_500_000n // Mezo's block gas limit is 10M
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
 const WAIT = Number(process.env.WAIT ?? 120)
 async function waitForKeeper(label, isArmed, fire) {
@@ -126,7 +141,7 @@ const flash = totalColl - deposit
 const debt = ((await r('quoteMusdForBtc', [flash])) * 112n) / 100n
 dl = deadline()
 await send('coil', ROUTER, router, 'coil', [totalColl, debt, Z, Z,
-  await sign('OpenTrove', { assetAmount: totalColl, debtAmount: debt, borrower: me, recipient: ROUTER, deadline: dl }), dl], deposit)
+  await sign('OpenTrove', { assetAmount: totalColl, debtAmount: debt, borrower: me, recipient: ROUTER, deadline: dl }), dl, await buyTol(flash)], deposit)
 let [c, pr, int] = await trove()
 console.log(`  trove ${fmt(c)} BTC / ${fmt(pr + int, 0)} MUSD  ICR ${fmt(await pub.readContract({ address: TM, abi: other, functionName: 'getCurrentICR', args: [me, await price()] }), 3)}`)
 
@@ -143,6 +158,8 @@ await send('armShield', ROUTER, router, 'armShield', [repay, ((await price()) * 
 await waitForKeeper('fireShield', async () => (await r('shieldOf', [me]))[6] !== '0x',
   () => send('fireShield', ROUTER, router, 'fireShield', [me, Z, Z, 200n]))
 
+} else if ((await r('shieldOf', [me]))[6] !== '0x') {
+  await send('fireShield', ROUTER, router, 'fireShield', [me, Z, Z, 200n])
 }
 
 // 4. leverage up
@@ -150,7 +167,7 @@ const add = deposit / 3n
 const inc = ((await r('quoteMusdForBtc', [add])) * 1015n) / 1000n
 dl = deadline()
 await send('relever', ROUTER, router, 'relever', [add, inc, Z, Z,
-  await sign('AdjustTrove', { collWithdrawal: 0n, debtChange: inc, isDebtIncrease: true, assetAmount: add, borrower: me, recipient: ROUTER, deadline: dl }), '0x', dl, 0n])
+  await sign('AdjustTrove', { collWithdrawal: 0n, debtChange: inc, isDebtIncrease: true, assetAmount: add, borrower: me, recipient: ROUTER, deadline: dl }), '0x', dl, 0n, await buyTol(add)])
 
 // 5. Recoil, trigger at MCR so it is due now
 const add2 = deposit / 6n
@@ -158,8 +175,21 @@ const inc2 = ((await r('quoteMusdForBtc', [add2])) * 1015n) / 1000n
 dl = deadline(86400)
 await send('armRecoil', ROUTER, router, 'armRecoil', [11n * WAD / 10n, add2, inc2, 10, dl,
   await sign('AdjustTrove', { collWithdrawal: 0n, debtChange: inc2, isDebtIncrease: true, assetAmount: add2, borrower: me, recipient: ROUTER, deadline: dl }), '0x'])
-await waitForKeeper('fireRecoil', async () => (await r('recoilOf', [me]))[6] !== '0x',
-  () => send('fireRecoil', ROUTER, router, 'fireRecoil', [me, Z, Z]))
+if ((await buyTol(add2)) === 0) {
+  await waitForKeeper('fireRecoil', async () => (await r('recoilOf', [me]))[6] !== '0x',
+    () => send('fireRecoil', ROUTER, router, 'fireRecoil', [me, Z, Z]))
+} else {
+  // The pool prices BTC past the 3% bound: a keeper must not buy BTC for the user there, whatever the bounty.
+  try {
+    await pub.simulateContract({ account, address: ROUTER, abi: router, functionName: 'fireRecoil', args: [me, Z, Z] })
+    throw new Error('fireRecoil should have been refused by the oracle bound')
+  } catch (e) {
+    if (!String(e.shortMessage ?? e.message).match(/PriceDeviation|revert/i)) throw e
+    console.log('✓ fireRecoil             refused by the oracle bound (pool past 3%), as designed')
+    log.push({ step: 'fireRecoil refused (PriceDeviation)', by: 'contract' })
+  }
+  await send('disarmRecoil', ROUTER, router, 'disarmRecoil', [])
+}
 
 // 6. Guard, armed above the current price so it is due now
 const gRepay = 300n * WAD
@@ -175,7 +205,7 @@ const dRepay = 200n * WAD
 const dWithdraw = ((await r('quoteBtcForMusd', [dRepay])) * 105n) / 100n
 dl = deadline()
 await send('deleverage', ROUTER, router, 'deleverage', [dWithdraw, dRepay, Z, Z,
-  await sign('AdjustTrove', { collWithdrawal: dWithdraw, debtChange: dRepay, isDebtIncrease: false, assetAmount: 0n, borrower: me, recipient: ROUTER, deadline: dl }), dl, 1n])
+  await sign('AdjustTrove', { collWithdrawal: dWithdraw, debtChange: dRepay, isDebtIncrease: false, assetAmount: 0n, borrower: me, recipient: ROUTER, deadline: dl }), dl, 1n, await sellTol(dRepay)])
 
 // 8. incentives to the gauge (the keeper pushes them every 10 min; push now if any are left)
 if ((await r('pendingIncentives')) > 0n) await send('pushIncentives', ROUTER, router, 'pushIncentives', [])
@@ -186,7 +216,7 @@ await send('withdrawReserve', ROUTER, router, 'withdrawReserve', [await r('reser
 // 10. unwind
 if (!process.env.KEEP_OPEN) {
   dl = deadline()
-  await send('unwind', ROUTER, router, 'unwind', [await sign('CloseTrove', { borrower: me, recipient: ROUTER, deadline: dl }), dl, 0n])
+  await send('unwind', ROUTER, router, 'unwind', [await sign('CloseTrove', { borrower: me, recipient: ROUTER, deadline: dl }), dl, 0n, await sellTol(await r('closeAmount', [me]))])
 }
 const s1 = await pub.getBalance({ address: me })
 const m1 = await pub.readContract({ address: MUSD, abi: other, functionName: 'balanceOf', args: [me] })

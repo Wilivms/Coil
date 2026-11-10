@@ -8,6 +8,7 @@ import { client } from './live'
 import { adjustTroveTypedData, closeTroveTypedData, deadlineIn, openTroveTypedData, refinanceTypedData, repayTypedData } from './signing'
 import type { GuardPlan, OpenPlan } from './math'
 import { toWad } from './math'
+import { buyBtcTolerance, sellBtcTolerance, unwindTolerance } from './tolerance'
 import { explainError, useToast } from '../components/Toasts'
 
 export type Step = 'idle' | 'sign' | 'send' | 'confirm' | 'done'
@@ -111,11 +112,11 @@ export function useCoilActions() {
         setStep('sign')
         const deadline = deadlineIn(20 * 60)
         const { signature, refinanceSig, collAfter, debtAfter } = await releverSigs(user, addColl, debtIncrease, deadline)
-        const [upper, lower] = await insertHints(collAfter, debtAfter)
+        const [[upper, lower], dev] = await Promise.all([insertHints(collAfter, debtAfter), buyBtcTolerance(addColl)])
         setStep('send')
         return wallet!.writeContract({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'relever',
-          args: [addColl, debtIncrease, upper, lower, signature, refinanceSig, deadline, 0n],
+          args: [addColl, debtIncrease, upper, lower, signature, refinanceSig, deadline, 0n, dev],
         })
       }, 'Leverage increased'),
 
@@ -142,8 +143,8 @@ export function useCoilActions() {
     coil: (plan: OpenPlan) =>
       run('Coil', async (user) => {
         setStep('sign')
-        const [nonce, [upper, lower], value] = await Promise.all([
-          nonceOf(user), insertHints(plan.totalColl, plan.compositeDebt), feeAdjustedValue(plan.deposit),
+        const [nonce, [upper, lower], value, dev] = await Promise.all([
+          nonceOf(user), insertHints(plan.totalColl, plan.compositeDebt), feeAdjustedValue(plan.deposit), buyBtcTolerance(plan.flashBtc),
         ])
         const deadline = deadlineIn(20 * 60)
         const signature = await wallet!.signTypedData({
@@ -153,14 +154,14 @@ export function useCoilActions() {
         setStep('send')
         return wallet!.writeContract({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'coil',
-          args: [plan.totalColl, plan.debtAmount, upper, lower, signature, deadline], value,
+          args: [plan.totalColl, plan.debtAmount, upper, lower, signature, deadline, dev], value,
         })
       }, 'Position open'),
 
     unwind: (minBtcOut: bigint) =>
       run('Unwind', async (user) => {
         setStep('sign')
-        const nonce = await nonceOf(user)
+        const [nonce, dev] = await Promise.all([nonceOf(user), unwindTolerance(user)])
         const deadline = deadlineIn(20 * 60)
         const signature = await wallet!.signTypedData({
           account: user, ...closeTroveTypedData({ borrower: user, recipient: COIL_ROUTER!, nonce, deadline }),
@@ -168,14 +169,14 @@ export function useCoilActions() {
         setStep('send')
         return wallet!.writeContract({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'unwind',
-          args: [signature, deadline, minBtcOut],
+          args: [signature, deadline, minBtcOut, dev],
         })
       }, 'Position closed'),
 
     deleverage: (withdraw: bigint, repay: bigint, collAfter: bigint, debtAfter: bigint) =>
       run('Deleverage', async (user) => {
         setStep('sign')
-        const [nonce, [upper, lower]] = await Promise.all([nonceOf(user), insertHints(collAfter, debtAfter)])
+        const [nonce, [upper, lower], dev] = await Promise.all([nonceOf(user), insertHints(collAfter, debtAfter), sellBtcTolerance(repay)])
         const deadline = deadlineIn(20 * 60)
         const signature = await wallet!.signTypedData({
           account: user,
@@ -187,7 +188,7 @@ export function useCoilActions() {
         setStep('send')
         return wallet!.writeContract({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'deleverage',
-          args: [withdraw, repay, upper, lower, signature, deadline, 0n],
+          args: [withdraw, repay, upper, lower, signature, deadline, 0n, dev],
         })
       }, 'Leverage reduced'),
 

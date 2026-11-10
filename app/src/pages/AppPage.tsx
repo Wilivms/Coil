@@ -14,6 +14,7 @@ import { historicalTouchRate, realizedVol, touchProbability } from '../lib/risk'
 import { fmtBtc, fmtCompact, fmtNum, fmtPct, fmtUsd, shortAddr } from '../lib/format'
 import { useTweened } from '../lib/motion'
 import { useCoilActions, type Step } from '../lib/actions'
+import { DEFAULT_DEVIATION_BPS, poolGap } from '../lib/tolerance'
 import { FlowGraph } from '../components/FlowGraph'
 import { Fan } from '../components/Fan'
 import { Gauge, RadarStrip, ReplayChart, type ReplayWindow } from '../components/Instruments'
@@ -198,6 +199,10 @@ function BuildPanel({ m, plan, lev, setLev, maxLev, depositStr, setDepositStr, a
   const bal = useBalance({ address, query: { refetchInterval: 20_000 } })
   const price = fromWad(m.price)
   const debtShown = useTweened(fromWad(plan.compositeDebt))
+  // how far the pool sits from MUSD's oracle, plus this trade's own impact
+  const gap = poolGap(m.reserveMusd, m.reserveBtc, m.price)
+  const tradeGap = gap + (plan.priceImpact || 0)
+  const wide = tradeGap * 10_000 + 75 > DEFAULT_DEVIATION_BPS
   const levPct = ((lev - 1.1) / (8 - 1.1)) * 100
   const maxPct = ((maxLev - 1.1) / (8 - 1.1)) * 100
   const short = bal.data && plan.deposit > bal.data.value
@@ -259,11 +264,18 @@ function BuildPanel({ m, plan, lev, setLev, maxLev, depositStr, setDepositStr, a
           <div className="row row--strong"><span>Liquidation price</span><span>{fmtUsd(plan.liqPrice)} <span className="faint">({fmtPct(plan.liqPrice / price - 1, 0)})</span></span></div>
           <div className="row"><span>Interest a year</span><span>{fmtNum(plan.interestYear)} MUSD</span></div>
           <div className="row"><span>Pool price · impact</span><span>{fmtUsd(plan.poolPrice || 0)} · {fmtPct(plan.priceImpact, 2)}</span></div>
+          <div className="row"><span>Pool vs MUSD oracle</span><span>{gap >= 0 ? '+' : ''}{fmtPct(gap, 1)}{wide && <span className="faint"> · this trade accepts {fmtPct(Math.min(tradeGap + 0.0075, 0.2), 1)}</span>}</span></div>
           <div className="row"><span>Refunded buffer</span><span>{fmtNum(fromWad(plan.refund), 0)} MUSD</span></div>
         </div>
 
         {plan.status === 'below-min-debt' && <p className="note note--danger">MUSD needs at least 1,800 MUSD of debt. Deposit more BTC or raise the leverage.</p>}
         {plan.status === 'tight' && <p className="note note--danger">This would open under 115% after the swap. Coil keeps a 5% cushion over liquidation.</p>}
+        {wide && plan.status === 'ok' && (
+          <p className="note">
+            The pool prices BTC {fmtPct(gap, 1)} {gap >= 0 ? 'above' : 'below'} MUSD's oracle right now. Coil accepts that gap for this one trade, since you send it
+            and your signed amounts cap it. Keeper-fired Guards and Recoils stay on the 3% bound.
+          </p>
+        )}
         {m.recoveryMode && <p className="note note--danger">MUSD is in recovery mode: new loops are paused until the system ratio is back above 150%.</p>}
 
         <StepList step={actions.step} active={actions.busy === 'Coil'} labels={['Sign the trove in your name', 'Send one transaction', 'Mezo confirms']} />

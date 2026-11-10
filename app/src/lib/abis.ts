@@ -4,6 +4,14 @@ import { parseAbi } from 'viem'
 export const coilRouterAbi = parseAbi([
   'function coil(uint256 totalColl, uint256 debtAmount, address upperHint, address lowerHint, bytes signature, uint256 deadline) payable returns (uint256)',
   'function unwind(bytes signature, uint256 deadline, uint256 minBtcOut) returns (uint256)',
+  // v4: the same flows with the borrower's own PriceFeed tolerance for that call (bps, 0 = default)
+  'function coil(uint256 totalColl, uint256 debtAmount, address upperHint, address lowerHint, bytes signature, uint256 deadline, uint16 deviationBps) payable returns (uint256)',
+  'function unwind(bytes signature, uint256 deadline, uint256 minBtcOut, uint16 deviationBps) returns (uint256)',
+  'function deleverage(uint256 collWithdrawal, uint256 debtRepay, address upperHint, address lowerHint, bytes signature, uint256 deadline, uint256 minBtcOut, uint16 deviationBps) returns (uint256)',
+  'function relever(uint256 addColl, uint256 debtIncrease, address upperHint, address lowerHint, bytes signature, bytes refinanceSig, uint256 deadline, uint256 minMusdOut, uint16 deviationBps) returns (uint256)',
+  'function maxDeviationBps() view returns (uint16)',
+  'function quoteMusdForBtc(uint256 btcOut) view returns (uint256)',
+  'function quoteBtcForMusd(uint256 musdOut) view returns (uint256)',
   'function deleverage(uint256 collWithdrawal, uint256 debtRepay, address upperHint, address lowerHint, bytes signature, uint256 deadline, uint256 minBtcOut) returns (uint256)',
   'function armGuard(uint128 triggerPrice, uint128 collWithdrawal, uint128 debtRepay, uint128 minBtcOut, uint16 bountyBps, uint64 deadline, bytes signature)',
   'function disarmGuard()',
@@ -29,6 +37,8 @@ export const coilRouterAbi = parseAbi([
   'function closeAmount(address user) view returns (uint256)',
   'function feeBps() view returns (uint16)',
   'function maxDeviationBps() view returns (uint16)',
+  'function quoteMusdForBtc(uint256 btcOut) view returns (uint256)',
+  'function quoteBtcForMusd(uint256 musdOut) view returns (uint256)',
 ])
 
 /** Read-only status views (CoilLens). */

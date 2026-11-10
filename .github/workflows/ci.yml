@@ -33,7 +33,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: foundry-rs/foundry-toolchain@v1
       - name: Real MUSD, sMUSD, SortedTroves and MUSD/BTC pool
-        run: forge test --match-path "test/fork/*" --fork-url https://rpc.test.mezo.org -vv
+        run: forge test --match-path "test/fork/CoilFork.t.sol" --fork-url https://rpc.test.mezo.org -vv
+      - name: Real Mezo mainnet MUSD, sMUSD and pool (read-only fork, nothing sent)
+        run: forge test --match-path "test/fork/CoilMainnetFork.t.sol" --fork-url https://mezo-mainnet.boar.network -vv
 
   app:
     name: App typecheck and build

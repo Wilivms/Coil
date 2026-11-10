@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { decodeEventLog, type Abi, type Address, type Hash, type Hex } from 'viem'
-import { COIL_ROUTER, ROUTER_V1, ROUTER_V1_BLOCK, ROUTER_V2, ROUTER_V2_BLOCK, ROUTER_V3_BLOCK } from './chain'
+import { COIL_ROUTER, ROUTER_V1, ROUTER_V1_BLOCK, ROUTER_V2, ROUTER_V2_BLOCK, ROUTER_V3, ROUTER_V3_BLOCK, ROUTER_V4_BLOCK } from './chain'
 import { routerEventsV1, routerEventsV2, routerEventsV3 } from './abis'
 import { client } from './live'
 
@@ -26,7 +26,7 @@ export type ActivityItem = {
   args: Record<string, bigint | Address | boolean>
 }
 
-type Router = 'v1' | 'v2' | 'v3'
+type Router = 'v1' | 'v2' | 'v3' | 'v4'
 
 export type Activity = { items: ActivityItem[]; wallets: number; walletsV2: number; total: number; fires: number }
 
@@ -98,9 +98,11 @@ export async function fetchActivity(): Promise<Activity> {
   const jobs = [
     routerActivity(ROUTER_V1, routerEventsV1, ROUTER_V1_BLOCK, 'v1', false),
     routerActivity(ROUTER_V2, routerEventsV2, ROUTER_V2_BLOCK, 'v2', false),
+    // v4 emits the same events as v3
+    routerActivity(ROUTER_V3, routerEventsV3 as unknown as Abi, ROUTER_V3_BLOCK, 'v3', false),
   ]
-  if (COIL_ROUTER && ![ROUTER_V1, ROUTER_V2].some((a) => a.toLowerCase() === COIL_ROUTER!.toLowerCase())) {
-    jobs.push(routerActivity(COIL_ROUTER, routerEventsV3 as unknown as Abi, ROUTER_V3_BLOCK, 'v3', true))
+  if (COIL_ROUTER && ![ROUTER_V1, ROUTER_V2, ROUTER_V3].some((a) => a.toLowerCase() === COIL_ROUTER!.toLowerCase())) {
+    jobs.push(routerActivity(COIL_ROUTER, routerEventsV3 as unknown as Abi, ROUTER_V4_BLOCK, 'v4', true))
   }
   const all = (await Promise.all(jobs)).flat()
   all.sort((a, b) => (a.block === b.block ? b.logIndex - a.logIndex : a.block > b.block ? -1 : 1))

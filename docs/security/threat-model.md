@@ -1,6 +1,6 @@
 # Coil threat model
 
-Scope: `contracts/src/CoilRouter.sol` (v3, Wave 2) and `CoilLens.sol` (read-only), the app's signing code (`app/src/lib/signing.ts`) and the keeper (`keeper/guard-keeper.mjs`).
+Scope: `contracts/src/CoilRouter.sol` (v4, Wave 2) and `CoilLens.sol` (read-only), the app's signing code (`app/src/lib/signing.ts`) and the keeper (`keeper/guard-keeper.mjs`).
 Each rule below names the test that enforces it. Run them all with `cd contracts && forge test` (fork tests: add `--match-path "test/fork/*" --fork-url https://rpc.test.mezo.org`).
 
 ## What Coil holds, and what it never holds
@@ -30,6 +30,8 @@ Every flash swap compares the USD value paid with the USD value received at the 
 - `test_guard_keeperSandwichReverts`, `test_coil_sandwichedPoolReverts`, `test_unwind_sandwichedPoolReverts`
 - `testFuzz_guardNeverSellsBelowOracleBound` (any dump size)
 - `invariant_*` with the `attackPool` action (pool moved without the oracle)
+
+**Borrower's own tolerance (v4).** On a trade the borrower sends themselves (`coil`, `relever`, `unwind`, `deleverage` with a trailing `deviationBps`), they may accept up to 20% for that one call. Their signed amounts (`debtAmount`, `debtIncrease`, `minBtcOut`) still cap what they pay, and a stale pool can no longer trap a position (testnet's pool sat 5.5% off the oracle on 10 Nov 2026). Keeper-fired flows (`fireGuard`, `fireRecoil`) have no such parameter and always run on `maxDeviationBps`; the choice is reset at every entry. `CoilOwnTolerance.t.sol`: `test_coil_ownToleranceOpensAtWideGap`, `test_ownTolerance_doesNotLeakIntoNextCall`, `test_guard_staysOnDefaultTolerance`, `test_ownTolerance_capped`, `test_unwind_ownToleranceClosesWhenPoolIsCheap`.
 
 Why not 0%: MUSD trades under $1 (≈$0.99 on mainnet, the testnet pool prices BTC ≈2% above the oracle), so BTC bought with MUSD always looks ≈2% dear. `test_coil_toleratesMusdDiscountWithinBound`, `test_fork_coilAtRealOracleGap` (live testnet gap), `test_coil_beyondToleranceReverts`, `test_coil_widenedToleranceWorksAgain`, `test_setMaxDeviation_bounds`.
 

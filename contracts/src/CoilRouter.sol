@@ -15,7 +15,7 @@ import {
     IReward
 } from "./interfaces/IMezo.sol";
 
-/// @title CoilRouter v3
+/// @title CoilRouter v4
 /// @notice Leveraged BTC on Mezo in one transaction, without ever taking custody of the trove,
 ///         plus two protections that keep the position alive: Guard and Shield.
 ///
@@ -75,6 +75,8 @@ contract CoilRouter is IPoolCallee {
     uint256 public constant MAX_INCENTIVE_BPS = 20; // 0.20% of a coil's debt to gauge incentives, at most
     /// Hard cap on how far a swap may price away from MUSD's PriceFeed (5%).
     uint256 public constant MAX_DEVIATION_BPS = 500;
+    /// Cap on the tolerance a borrower may choose for a swap they send themselves (20%).
+    uint256 public constant MAX_OWN_DEVIATION_BPS = 2000;
     /// Upper bound on the redemption-queue walk done by `fireShield` and `debtAhead`.
     uint256 public constant MAX_QUEUE_STEPS = 200;
 
@@ -101,6 +103,8 @@ contract CoilRouter is IPoolCallee {
     uint16 public maxDeviationBps = 300;
 
     uint8 private _flow = IDLE;
+    /// Tolerance of the flow in progress: `maxDeviationBps`, or the caller's own choice (see `own`).
+    uint16 private _dev;
 
     /// Share (bps of the debt) of each coil's MUSD sent to the pool's gauge incentives.
     uint16 public incentiveBps;
@@ -272,8 +276,21 @@ contract CoilRouter is IPoolCallee {
     modifier lock(uint8 flow) {
         if (_flow != IDLE) revert Busy();
         _flow = flow;
+        _dev = maxDeviationBps;
         _;
         _flow = IDLE;
+    }
+
+    /// A borrower trading for themselves may pick their own PriceFeed tolerance for that one call
+    /// (0 keeps the default). Keeper-fired flows (Guard, Recoil) never pass through here: they are
+    /// always held to `maxDeviationBps`, which the owner cannot raise above 5%.
+    /// Why: a pool can sit away from the oracle for a while (a slow testnet pool after a fast BTC
+    /// move, MUSD off its peg). The borrower's signed amounts still bound the trade, and closing a
+    /// position must never be blocked by a gap its owner is willing to accept.
+    modifier own(uint16 deviationBps) {
+        if (deviationBps > MAX_OWN_DEVIATION_BPS) revert BadParam();
+        if (deviationBps != 0) _dev = deviationBps;
+        _;
     }
 
     modifier onlyOwner() {
@@ -300,7 +317,31 @@ contract CoilRouter is IPoolCallee {
         address lowerHint,
         bytes calldata signature,
         uint256 deadline
-    ) external payable lock(OPEN) returns (uint256 musdRefund) {
+    ) external payable lock(OPEN) returns (uint256) {
+        return _coil(totalColl, debtAmount, upperHint, lowerHint, signature, deadline);
+    }
+
+    /// @notice `coil` with the caller's own PriceFeed tolerance for this call (bps, 0 = default).
+    function coil(
+        uint256 totalColl,
+        uint256 debtAmount,
+        address upperHint,
+        address lowerHint,
+        bytes calldata signature,
+        uint256 deadline,
+        uint16 deviationBps
+    ) external payable lock(OPEN) own(deviationBps) returns (uint256) {
+        return _coil(totalColl, debtAmount, upperHint, lowerHint, signature, deadline);
+    }
+
+    function _coil(
+        uint256 totalColl,
+        uint256 debtAmount,
+        address upperHint,
+        address lowerHint,
+        bytes calldata signature,
+        uint256 deadline
+    ) internal returns (uint256 musdRefund) {
         uint256 fee = (msg.value * feeBps) / 10_000;
         uint256 deposit = msg.value - fee;
         if (totalColl <= deposit) revert NothingToFlash();
@@ -344,7 +385,35 @@ contract CoilRouter is IPoolCallee {
         bytes calldata refinanceSig,
         uint256 deadline,
         uint256 minMusdOut
-    ) external lock(RELEVER) returns (uint256 musdOut) {
+    ) external lock(RELEVER) returns (uint256) {
+        return _releverOwn(addColl, debtIncrease, upperHint, lowerHint, signature, refinanceSig, deadline, minMusdOut);
+    }
+
+    /// @notice `relever` with the caller's own PriceFeed tolerance for this call (bps, 0 = default).
+    function relever(
+        uint256 addColl,
+        uint256 debtIncrease,
+        address upperHint,
+        address lowerHint,
+        bytes calldata signature,
+        bytes calldata refinanceSig,
+        uint256 deadline,
+        uint256 minMusdOut,
+        uint16 deviationBps
+    ) external lock(RELEVER) own(deviationBps) returns (uint256) {
+        return _releverOwn(addColl, debtIncrease, upperHint, lowerHint, signature, refinanceSig, deadline, minMusdOut);
+    }
+
+    function _releverOwn(
+        uint256 addColl,
+        uint256 debtIncrease,
+        address upperHint,
+        address lowerHint,
+        bytes calldata signature,
+        bytes calldata refinanceSig,
+        uint256 deadline,
+        uint256 minMusdOut
+    ) internal returns (uint256 musdOut) {
         musdOut = _relever(msg.sender, addColl, debtIncrease, upperHint, lowerHint, signature, refinanceSig, deadline);
         if (musdOut < minMusdOut) revert Slippage(musdOut, minMusdOut);
         if (musdOut > 0) _sendToken(musd, msg.sender, musdOut);
@@ -428,6 +497,24 @@ contract CoilRouter is IPoolCallee {
     function unwind(bytes calldata signature, uint256 deadline, uint256 minBtcOut)
         external
         lock(CLOSE)
+        returns (uint256)
+    {
+        return _unwind(signature, deadline, minBtcOut);
+    }
+
+    /// @notice `unwind` with the caller's own PriceFeed tolerance for this call (bps, 0 = default),
+    ///         so a pool that sits away from the oracle can never trap a position.
+    function unwind(bytes calldata signature, uint256 deadline, uint256 minBtcOut, uint16 deviationBps)
+        external
+        lock(CLOSE)
+        own(deviationBps)
+        returns (uint256)
+    {
+        return _unwind(signature, deadline, minBtcOut);
+    }
+
+    function _unwind(bytes calldata signature, uint256 deadline, uint256 minBtcOut)
+        internal
         returns (uint256 btcOut)
     {
         uint256 musdOwed = closeAmount(msg.sender);
@@ -459,7 +546,33 @@ contract CoilRouter is IPoolCallee {
         bytes calldata signature,
         uint256 deadline,
         uint256 minBtcOut
-    ) external lock(DELEVER) returns (uint256 btcOut) {
+    ) external lock(DELEVER) returns (uint256) {
+        return _deleverOwn(collWithdrawal, debtRepay, upperHint, lowerHint, signature, deadline, minBtcOut);
+    }
+
+    /// @notice `deleverage` with the caller's own PriceFeed tolerance for this call (bps, 0 = default).
+    function deleverage(
+        uint256 collWithdrawal,
+        uint256 debtRepay,
+        address upperHint,
+        address lowerHint,
+        bytes calldata signature,
+        uint256 deadline,
+        uint256 minBtcOut,
+        uint16 deviationBps
+    ) external lock(DELEVER) own(deviationBps) returns (uint256) {
+        return _deleverOwn(collWithdrawal, debtRepay, upperHint, lowerHint, signature, deadline, minBtcOut);
+    }
+
+    function _deleverOwn(
+        uint256 collWithdrawal,
+        uint256 debtRepay,
+        address upperHint,
+        address lowerHint,
+        bytes calldata signature,
+        uint256 deadline,
+        uint256 minBtcOut
+    ) internal returns (uint256 btcOut) {
         btcOut = _delever(msg.sender, collWithdrawal, debtRepay, upperHint, lowerHint, signature, deadline);
         if (btcOut < minBtcOut) revert Slippage(btcOut, minBtcOut);
         _sendBtc(msg.sender, btcOut);
@@ -829,9 +942,9 @@ contract CoilRouter is IPoolCallee {
     }
 
     /// Revert when the USD value paid into the pool exceeds the fair USD value received by more than
-    /// `maxDeviationBps`. Pool fee and price impact count against the same budget.
+    /// the flow's tolerance (`maxDeviationBps`, or the borrower's own choice on a call they send). Pool fee and price impact count against the same budget.
     function _checkDeviation(uint256 paidUsd, uint256 fairUsd) internal view {
-        if (paidUsd * 10_000 > fairUsd * (10_000 + maxDeviationBps)) revert PriceDeviation(paidUsd, fairUsd);
+        if (paidUsd * 10_000 > fairUsd * (10_000 + _dev)) revert PriceDeviation(paidUsd, fairUsd);
     }
 
     /// Walk the redemption queue from its tail (lowest nominal ICR, redeemed first) up to `user`,

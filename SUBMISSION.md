@@ -16,7 +16,7 @@ Wave 1 submission (19 Oct 2026): https://app.akindo.io/communities/kzmodr4eacd1Z
 - **Code:** https://github.com/Wilivms/Coil (commit judged: the latest on `main`; Wave 2 starts at 02f7583)
 - **Deck (PDF in the repo):** https://github.com/Wilivms/Coil/blob/main/docs/Coil-deck.pdf
 - **Video:** [to add, under 2:00]
-- **Contracts:** CoilRouter v3 `0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4`, CoilLens `0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353` (both verified); v2 `0xa9ad…7a92` holds the first keeper-fired Guard
+- **Contracts:** CoilRouter v4 `0x17e056ef7e076Fbcb806dF9916552A26Da527F03`, CoilLens `0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5` (both verified); v3 `0x7b3D…6Ac4` holds the full keeper E2E; v2 `0xa9ad…7a92` holds the first keeper-fired Guard
 
 ## TL;DR
 
@@ -25,23 +25,34 @@ Coil opens a leveraged MUSD trove in one transaction, in the user's own name, th
 
 ## Updates in this Wave (paste into "Updates in this Wave", 3,000 characters max)
 
-Wave 2 answers every point of the Wave 1 review, and turns Coil from a leverage tool into leverage that survives Mezo's real risk.
+LINKS
+App: https://coil-mezo-blitz-bet.vercel.app/#/app · Try: /#/try · Proof (every tx): /#/proof
+Code: https://github.com/Wilivms/Coil · Deck: docs/Coil-deck.pdf · E2E: docs/e2e-testnet.md
+CoilRouter v4 0x17e056ef7e076Fbcb806dF9916552A26Da527F03 + CoilLens 0xa821…d8f5, source-verified
 
-The problem, measured on mainnet: MUSD's TroveManager logged 1,176 redemptions against 28 liquidations, 5.9M MUSD redeemed, 78.9 BTC taken from troves; 3 troves remain open. Leveraged troves sit at the front of the redemption queue.
+WHY: on Mezo mainnet MUSD logged 1,279 redemptions vs 28 liquidations (5.94M MUSD, 79.6 BTC taken). Redemptions hit the lowest-ratio troves first: a leveraged trove. Coil is leverage built for that.
 
-What shipped (CoilRouter v2, 0xa9ad…7a92, source-verified):
-- High finding fixed: every swap (coil, unwind, deleverage, Guard) is bounded by MUSD's PriceFeed (3% tolerance for MUSD trading under $1, 5% hard cap), and Guard stores a signed minBtcOut. A test replays the keeper sandwich and it reverts.
-- Reserve: MUSD parked in Mezo's sMUSD vault through Coil, yield credited pro rata, only its owner can withdraw.
-- Shield: a signed RepayMUSD funded by the Reserve. Fires at a price, or when less than X MUSD of debt stands ahead in the redemption queue, proved on-chain by walking SortedTroves (troves under MCR skipped). Repay-only, so it works in Recovery Mode where Guard can't.
-- Always-on keeper: a GitHub Action polls every 15 s and chains itself; first Guard fired on-chain (tx 0x76ce…2894).
-- Guard works on any MUSD trove, not only Coil's. "Test it now" buttons arm a Guard or Shield at today's price so anyone can watch the keeper fire.
-- Fixed: pending redistribution was double-counted (contract and app). One-click claim of leftover BTC after a redemption. Recovery Mode and minimum debt read on-chain.
-- App: Proof page (every flow with its tx), Try-it onboarding for outside testers, wallet counter, no forced intro.
-- Security: threat model with each rule mapped to a test; 85 unit/fuzz/invariant/edge tests (random flows incl. pool attacks, 96.9% line coverage); 6 fork tests on live testnet (real sMUSD, a Shield repaying a real trove with a real RepayMUSD signature, the 350-trove queue); CI on every push.
-- Full end-to-end run on testnet (docs/e2e-testnet.md): coil, Reserve, leverage up, deleverage, incentives, unwind, with Shield, Recoil and Guard all fired by the keeper on its own.
-- Why not mainnet: the mainnet BTC/MUSD pool holds ~0.75 BTC, so a 0.1 BTC 3x position would pay ~37% over mid. Coil launches there once the pool is deep; routing part of the fee to its gauge is the plan.
+WAVE 1 FEEDBACK
+1. Keeper sandwich (High): fixed. Every swap is bounded by MUSD's PriceFeed and Guard stores a signed minBtcOut; the sandwich replay test reverts.
+2. Recovery Mode: Shield, a signed RepayMUSD funded by a Reserve in Mezo's sMUSD (earns yield). Repay-only, so it works when Guard can't.
+3. Keeper end to end: always-on GitHub Actions keeper (15 s). On v3 it fired a Shield, a Recoil and a Guard on its own: docs/e2e-testnet.md.
+4. Outside wallets: Guard/Shield now work on any MUSD trove; /try onboarding. Honest count on /proof.
+5. Verify, video, no forced intro: done.
 
-Business: 0.10% opening fee (capped 0.5% on-chain), keeper bounties, and every Coil trove pays MUSD interest that flows to sMUSD savers through MUSD's PCV.
+NEW IN WAVE 2
+- Shield redemption trigger: fires when less than X MUSD stands ahead of the trove, proved on-chain by walking SortedTroves.
+- Leverage up in one tx (adds a Refinance signature when MUSD's capacity is short) and Recoil, a signed leverage-up the keeper runs once the ratio is back.
+- 0.05% of each coil's debt to the MUSD/BTC gauge incentives, live on testnet.
+- v4, found by our own E2E: the testnet pool drifted 5.5% from the oracle, past our 5% cap, and every coil reverted. Now the borrower may accept a wider gap (max 20%) on a trade they send; the app sets it from the live quote and shows it. Keeper flows stay on 3%: on-chain, fireRecoil was refused at that gap. Full v4 E2E at the gap: docs/e2e-testnet.md.
+- Also fixed: pending redistribution double count, claim of leftover BTC, an RPC gas estimate ~140x too low.
+
+TESTS: 101 unit/fuzz/invariant (96.9% line coverage, 10k-run fuzz) + 9 fork tests on the real Mezo contracts, testnet and mainnet: Shield repays a real mainnet trove from mainnet sMUSD. Slither triaged. CI on every push.
+
+WHY NOT MAINNET: the mainnet MUSD/BTC pool holds 0.48 BTC; a 0.05 BTC flash pays ~12% over fair. The mainnet fork test shows Coil refuses it. Reserve and Shield need no pool and already pass on a mainnet fork.
+
+BUSINESS: 0.10% open fee (0.5% cap), keeper bounties, interest to sMUSD via PCV.
+
+DISCLOSURE: testnet only, not audited. E2E txs are from the team's ops wallet. The owner can tune fee and default tolerance within hard caps; a timelock comes before mainnet.
 
 ## How it works
 

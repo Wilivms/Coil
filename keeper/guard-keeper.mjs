@@ -14,6 +14,9 @@
  *             RUN_FOR_SECONDS=300 (poll for that long, then exit: used by the self-chaining GitHub Action)
  */
 import { createPublicClient, createWalletClient, defineChain, http, parseAbi, formatEther, encodeFunctionData } from 'viem'
+// The RPC's gas estimate has come back far too low right after a state change (32,742 gas on a
+// fireShield that needs ~600k): never send less than this. Only gas used is paid.
+const GAS_FLOOR = 1_500_000n
 import { privateKeyToAccount } from 'viem/accounts'
 
 const mezoTestnet = defineChain({
@@ -83,7 +86,7 @@ async function fire(kind, user, functionName, args, unit) {
     // Hints are zero, so MUSD's SortedTroves walks the list: leave a 50% gas margin so an inner
     // call can't run out of gas (63/64 rule) while the estimate still passes.
     const gas = await pub.estimateGas({ account, to: ROUTER, data: encodeFunctionData({ abi, functionName, args }) })
-    const hash = await wallet.writeContract({ ...request, gas: (gas * 3n) / 2n })
+    const hash = await wallet.writeContract({ ...request, gas: [(gas * 3n) / 2n, GAS_FLOOR, 9_500_000n].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))[1] }) // clamp to [floor, 9.5M]; Mezo's block limit is 10M
     const rc = await pub.waitForTransactionReceipt({ hash })
     if (rc.status !== 'success') throw new Error(`reverted on-chain: ${hash}`)
     console.log(`[${kind}] fired for ${user}: https://explorer.test.mezo.org/tx/${hash}`)

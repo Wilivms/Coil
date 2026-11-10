@@ -36,11 +36,16 @@ export const ROUTER_V1_BLOCK = 16_188_308n
 export const ROUTER_V2 = '0xA9aDbE2e3DDFbD3795Add019c8EA64a950777a92' as Address
 export const ROUTER_V2_BLOCK = 16_558_220n
 
-/** CoilRouter v3 (Wave 2): relever, Recoil, gauge incentives. Source-verified. VITE_COIL_ROUTER overrides it. */
-const DEPLOYED_ROUTER: string = '0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4'
+/** CoilRouter v3 (Wave 2): relever, Recoil, gauge incentives; the full on-chain E2E ran on it. Kept for its history. */
+export const ROUTER_V3 = getAddress('0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4'.toLowerCase())
 export const ROUTER_V3_BLOCK = 16_559_650n
-/** CoilLens: read-only status views for the router (verified). */
-export const COIL_LENS = getAddress('0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353'.toLowerCase())
+
+/** CoilRouter v4 (Wave 2, current): v3 plus the borrower's own PriceFeed tolerance on the swaps they send.
+ *  Source-verified. VITE_COIL_ROUTER overrides it. */
+const DEPLOYED_ROUTER: string = '0x17e056ef7e076Fbcb806dF9916552A26Da527F03'
+export const ROUTER_V4_BLOCK = 16_701_916n
+/** CoilLens for v4: read-only status views (verified). */
+export const COIL_LENS = getAddress('0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5'.toLowerCase())
 /** MUSD/BTC gauge incentive contract that receives Coil's incentives (PoolsVoter 0x263F…5F0D). */
 export const GAUGE_INCENTIVES = '0x75b6B35Fc78826A0B7E1f9c08bb7d84bd70D0ee1' as Address
 const envRouter = (import.meta.env.VITE_COIL_ROUTER ?? '').trim() || DEPLOYED_ROUTER

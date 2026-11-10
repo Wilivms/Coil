@@ -3,16 +3,23 @@
   "network": "Mezo testnet",
   "contracts": {
     "CoilRouter": {
-      "version": "v3",
-      "address": "0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4",
-      "deployTx": "0x927811a52dff769acd0458599026da14aa6ec1692012e75556ea5c19644193eb",
-      "block": 16559650,
-      "verified": "https://explorer.test.mezo.org/address/0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4#code",
+      "version": "v4",
+      "address": "0x17e056ef7e076Fbcb806dF9916552A26Da527F03",
+      "deployTx": "0x801797876e6e12c531836bf4fa93bc4a04021bd3a648b71aa6d38d5c4ab5abb1",
+      "block": 16701916,
+      "verified": "https://explorer.test.mezo.org/address/0x17e056ef7e076Fbcb806dF9916552A26Da527F03#code",
       "treasury": "0xcFe7934D31F6C22DDaFeD72FC065D13eFF48b368",
       "maxDeviationBps": 300,
+      "maxOwnDeviationBps": 2000,
       "feeBps": 0,
       "incentiveBps": 5,
       "incentiveTarget": "0x75b6B35Fc78826A0B7E1f9c08bb7d84bd70D0ee1"
+    },
+    "CoilLens": {
+      "address": "0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5",
+      "deployTx": "0xe1019e4e7a491a4ce5767a1982ea46b99a386fa058aba81ebae7d99654faaccc",
+      "block": 16701916,
+      "verified": "https://explorer.test.mezo.org/address/0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5#code"
     },
     "CoilRouterV1": {
       "version": "v1",
@@ -31,7 +38,19 @@
       "maxDeviationBps": 300,
       "feeBps": 0
     },
-    "CoilLens": {
+    "CoilRouterV3": {
+      "version": "v3",
+      "address": "0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4",
+      "deployTx": "0x927811a52dff769acd0458599026da14aa6ec1692012e75556ea5c19644193eb",
+      "block": 16559650,
+      "verified": "https://explorer.test.mezo.org/address/0x7b3D480207A95Ff14Ec89a0B9dA4dD435c4B6Ac4#code",
+      "treasury": "0xcFe7934D31F6C22DDaFeD72FC065D13eFF48b368",
+      "maxDeviationBps": 300,
+      "feeBps": 0,
+      "incentiveBps": 5,
+      "incentiveTarget": "0x75b6B35Fc78826A0B7E1f9c08bb7d84bd70D0ee1"
+    },
+    "CoilLensV3": {
       "address": "0x6ba3E71e7c4E5FF4Ba8962fdE12Ffe0a90323353",
       "deployTx": "0x029603201e38a0e55fa49c0052233913573c41936d4a5e8b822ac6122d7c810b",
       "block": 16559651,
