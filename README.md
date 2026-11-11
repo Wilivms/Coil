@@ -76,6 +76,11 @@ Every sentence of the Wave 1 review, and what answers it:
 | **Shield** | Signed repay from the Reserve, fired at a price or when ≤ X MUSD stands ahead in the redemption queue; works in Recovery Mode | `armShield` / `fireShield` / `shieldStatus` / `debtAhead` |
 | **Claim** | Leftover BTC after a redemption, one click | `BorrowerOperations.claimCollateral` |
 | **Risk cockpit** | Liquidation odds, Monte Carlo, history replay, live redemption radar | `app/src/lib/risk.ts`, `live.ts` |
+| **Cost before you sign** | Every trade shows its cost against MUSD's oracle in MUSD: pool/oracle gap, pool fee, impact, MUSD's borrowing fee, Coil fee, gauge share | `app/src/lib/costs.ts` |
+| **Wait or act** | When the pool sits past the 3% keeper bound, Recoil and Guard say why they wait and offer to do it now, with the gap and its cost | `RecoilPanel`, `GuardPanel` |
+| **Fire it yourself** | Any due Guard, Shield or Recoil can be fired from the app by any wallet, for the bounty: no dependence on our keeper | `actions.fire` |
+| **Read-only view** | `#/app?address=0x…` shows any wallet's trove, protections and history, no wallet needed | `AppPage` |
+| **Keeper health + mainnet queue** | `/proof` reads the keeper's runs from GitHub Actions and Mezo mainnet's redemption queue live (read-only) | `keeperStatus.ts`, `mainnet.ts` |
 
 ## Why not mainnet yet
 

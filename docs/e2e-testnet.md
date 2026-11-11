@@ -58,3 +58,22 @@ flows never get that choice. Same wallet, same script (`npm run e2e`), with the 
 Two more things this run found and fixed in the keeper and the script: the RPC once estimated 32,742 gas for a
 `fireShield` that used 4.7M (hintless SortedTroves walk), so sends now use a 1.5M floor; and 1.5× a large estimate can
 pass Mezo's 10M block limit, so sends are capped at 9.5M.
+
+## v4 run with insert hints (11 Nov 2026, 05:15 CET)
+
+Same 14 steps, now with SortedTroves insert hints from MUSD's HintHelpers on every call (keeper and script; the app
+already had them). The keeper fired the Shield and the Guard on its own; the Recoil was refused by the 3% bound again
+(pool still ~6% off the oracle).
+
+| Step | Tx |
+|---|---|
+| coil | [`0xc31acdd3…`](https://explorer.test.mezo.org/tx/0xc31acdd3b70752de3c50a8444b068f38342310687a19de9b5cfb1d9124be24b8) |
+| fireShield (keeper) | [`0x545502b1…`](https://explorer.test.mezo.org/tx/0x545502b160ec07db691e97463ff49017f53e1661453ad071a7737cfcc075f70a) |
+| relever | [`0x62d53d04…`](https://explorer.test.mezo.org/tx/0x62d53d042644ab677e2e6cf79204154205f8e5c79722e402906c0c8e02a47bcf) |
+| fireRecoil | refused by the oracle bound, then `disarmRecoil` [`0xc2dfe03e…`](https://explorer.test.mezo.org/tx/0xc2dfe03e56e228ef4e76b1b79dfba2039429c17656e140b0c6e7ed5fbbf36e92) |
+| fireGuard (keeper) | [`0xfc469bdb…`](https://explorer.test.mezo.org/tx/0xfc469bdbef91d731278a850da5b7e0c6e5266df487d2303973ba876201cfe513) |
+| deleverage | [`0x3f24338b…`](https://explorer.test.mezo.org/tx/0x3f24338b3f85d5c3eb4e497d0a445a402f1ff0cfb03a7006cb9623dfe95f36d4) |
+| unwind | [`0xdf119fff…`](https://explorer.test.mezo.org/tx/0xdf119fff7c9bee3d22099876a92280a57715fc549e76540786c0a780090fcb3f) |
+
+Mezo charges at least half of a transaction's gas limit, so with hints in place the send floor drops from 1.5M to 600k.
+

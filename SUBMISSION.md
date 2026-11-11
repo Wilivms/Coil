@@ -44,8 +44,9 @@ NEW IN WAVE 2
 - Leverage up in one tx (adds a Refinance signature when MUSD's capacity is short) and Recoil, a signed leverage-up the keeper runs once the ratio is back.
 - 0.05% of each coil's debt to the MUSD/BTC gauge incentives, live on testnet.
 - v4, found by our own E2E: the testnet pool drifted 5.5% from the oracle, past our 5% cap, and every coil reverted. Now the borrower may accept a wider gap (max 20%) on a trade they send; the app sets it from the live quote and shows it. Keeper flows stay on 3%: on-chain, fireRecoil was refused at that gap. Full v4 E2E at the gap: docs/e2e-testnet.md.
+- App: cost vs the oracle (MUSD) before each signature; wait-or-act when the pool is past the keeper bound; fire-it-yourself; read-only ?address= view; live keeper health and mainnet queue on /proof.
 - Owner behind a 24 h OpenZeppelin timelock; its first proposal (the 0.10% fee) is public on-chain.
-- Also fixed: pending redistribution double count, claim of leftover BTC, an RPC gas estimate ~140x too low.
+- Also fixed: pending redistribution double count, claim of leftover BTC, an RPC gas estimate ~140x too low (fires now use hints).
 
 TESTS: 107 unit/fuzz/invariant (96.9% line coverage, 10k-run fuzz) + 9 fork tests on the real Mezo contracts, testnet and mainnet: Shield repays a real mainnet trove from mainnet sMUSD. Slither triaged. CI on every push.
 
