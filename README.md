@@ -16,7 +16,7 @@ Track 1 (DeFi) · Chain: Mezo testnet (31611) · Status: Wave 1 project, extende
 2. **The product:** one transaction to open at 1.5–4×, one to lever up, one to close. Guard covers the price, Shield covers redemptions and Recovery Mode, Recoil restores leverage after them, the Reserve earns sMUSD yield while it waits.
 3. **The code:** [`contracts/src/CoilRouter.sol`](contracts/src/CoilRouter.sol), one immutable contract (plus a read-only [`CoilLens`](contracts/src/CoilLens.sol)), no proxy, no forwarder, no admin path to user funds; its owner is a 24 h [timelock](contracts/src/CoilTimelock.sol).
 4. **The proof:** `cd contracts && forge test` (unit, fuzz, invariants) and the fork suite against the real Mezo testnet contracts (below).
-5. **The security story:** [threat model](docs/security/threat-model.md), every rule mapped to the test that enforces it.
+5. **The security story:** [threat model](docs/security/threat-model.md), every rule mapped to the test that enforces it; [findings and fixes](docs/security/findings.md), every issue found in Wave 2 with its severity.
 
 ## What changed since Wave 1
 
