@@ -104,8 +104,9 @@ function tol(paid, fair) {
 const buyTol = async (btc) => tol(await r('quoteMusdForBtc', [btc]), (btc * (await price())) / WAD)
 const sellTol = async (m) => tol(((await r('quoteBtcForMusd', [m])) * (await price())) / WAD, m)
 // The RPC's gas estimate has come back far too low right after a state change (32,742 gas on a
-// fireShield that needs ~600k): never send less than this. Only gas used is paid.
-const GAS_FLOOR = 1_500_000n
+// hintless fireShield that used 4.7M): never send less than this. Mezo charges at least half the
+// limit, so the floor stays modest now that fires carry insert hints.
+const GAS_FLOOR = 600_000n
 const max = (a, b) => (a > b ? a : b)
 const min = (a, b) => (a < b ? a : b)
 const GAS_CAP = 9_500_000n // Mezo's block gas limit is 10M

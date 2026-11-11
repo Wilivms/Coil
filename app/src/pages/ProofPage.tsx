@@ -2,6 +2,7 @@ import { COIL_LENS, COIL_ROUTER, explorerAddr, explorerTx, GAUGE_INCENTIVES, ROU
 import { DEPLOY_TX, TEAM_WALLETS, useActivity, type ActivityItem, type ActivityKind } from '../lib/activity'
 import { shortAddr } from '../lib/format'
 import { useKeeperStatus } from '../lib/keeperStatus'
+import { useMainnetQueue } from '../lib/mainnet'
 
 const REPO = 'https://github.com/Wilivms/Coil'
 const V2_DEPLOY_TX = '0xac47acbe97dbf0412a1f2dd2667384572529950859a518d4eb25f27afb2be6d0'
@@ -158,6 +159,7 @@ export function ProofPage() {
             <p className="field__hint" style={{ margin: 0 }}>
               Reprint with the block number: <code>cd keeper &amp;&amp; npm ci &amp;&amp; npm run stats</code>.
             </p>
+            <MainnetRadar />
           </div>
         </section>
       </div>
@@ -183,6 +185,46 @@ function KeeperHealth() {
       <div className="row"><span>Last run started</span><span>{minsAgo(d?.lastStart)}</span></div>
       <div className="row"><span>Recent runs that succeeded</span><span>{d ? `${d.ok} / ${d.recent}` : '…'}</span></div>
       <div className="row"><span>Longest gap between runs, last {d ? Math.max(1, Math.round(d.coveredHours)) : '…'} h</span><span>{d ? `${Math.round(d.gapMinutes)} min` : '…'}</span></div>
+    </div>
+  )
+}
+
+/** The real mainnet redemption queue, live and read-only: who a redemption would hit first, and why Coil waits for a deeper pool. */
+function MainnetRadar() {
+  const q = useMainnetQueue()
+  if (q.isError) return <p className="field__hint" style={{ margin: 0 }}>Mainnet RPC unreachable right now.</p>
+  const d = q.data
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <span className="mono muted">Mainnet redemption queue, live (read-only; Coil is not deployed on mainnet)</span>
+      {!d ? <p className="field__hint" style={{ margin: 0 }}>Reading Mezo mainnet…</p> : (
+        <>
+          <div className="rows">
+            <div className="row"><span>MUSD/BTC pool on mainnet</span><span>{d.poolBtc.toFixed(3)} BTC · {Math.round(d.poolMusd).toLocaleString('en-US')} MUSD</span></div>
+            <div className="row"><span>MUSD supply · BTC price</span><span>{(d.supply / 1e6).toFixed(1)}M · ${Math.round(d.price).toLocaleString('en-US')}</span></div>
+          </div>
+          <div className="tbl-wrap">
+            <table>
+              <thead><tr><th>Order</th><th>Trove</th><th>Ratio</th><th>Debt (MUSD)</th><th>Redeemable debt ahead</th></tr></thead>
+              <tbody>
+                {d.troves.map((t, i) => (
+                  <tr key={t.owner}>
+                    <td>{i + 1}</td>
+                    <td>{shortAddr(t.owner)}</td>
+                    <td>{(t.icr * 100).toFixed(0)}%{t.redeemable ? '' : ' · skipped (under 110%)'}</td>
+                    <td>{Math.round(t.debt).toLocaleString('en-US')}</td>
+                    <td>{t.redeemable ? Math.round(t.ahead).toLocaleString('en-US') : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="field__hint" style={{ margin: 0 }}>
+            Order is MUSD's own: redemptions start at the lowest ratio. A leveraged trove would sit at the top of this list, which is what Shield's queue trigger watches.
+            The pool's depth is why Coil stays on testnet: a fork test shows Coil refusing a 0.05 BTC flash there (block {d.block.toString()}).
+          </p>
+        </>
+      )}
     </div>
   )
 }

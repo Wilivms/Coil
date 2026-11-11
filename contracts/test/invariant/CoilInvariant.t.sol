@@ -81,6 +81,48 @@ contract CoilHandler is Test {
         router.coil{value: deposit}(totalColl, debt, address(0), address(0), sig, dl);
     }
 
+    /// v4: a borrower's own PriceFeed tolerance (up to 20%) on the trades they send. Random widths,
+    /// including at a moved oracle, must keep every invariant (no BTC left, Reserve backed, lock released).
+    function coilOwn(uint256 a, uint256 dep, uint256 lev, uint256 dev) external {
+        _run("coilOwn", abi.encodeCall(this.doCoilOwn, (a % 3, bound(dep, 0.3e18, 3e18), bound(lev, 1.5e18, 4e18), uint16(bound(dev, 0, 2000)))));
+    }
+
+    function doCoilOwn(uint256 i, uint256 deposit, uint256 lev, uint16 dev) external self {
+        address u = actors[i];
+        uint256 totalColl = (deposit * lev) / 1e18;
+        uint256 debt = (router.quoteMusdForBtc(totalColl - deposit) * 1005) / 1000;
+        uint256 dl = block.timestamp + 1 hours;
+        bytes memory sig = _sig(i, troves.OPEN_TROVE_TYPEHASH(), abi.encode(totalColl, debt, u, address(router)), dl);
+        vm.deal(u, u.balance + deposit);
+        vm.prank(u);
+        router.coil{value: deposit}(totalColl, debt, address(0), address(0), sig, dl, dev);
+    }
+
+    function unwindOwn(uint256 a, uint256 dev) external {
+        _run("unwindOwn", abi.encodeCall(this.doUnwindOwn, (a % 3, uint16(bound(dev, 0, 2000)))));
+    }
+
+    function doUnwindOwn(uint256 i, uint16 dev) external self {
+        uint256 dl = block.timestamp + 1 hours;
+        bytes memory sig = _sig(i, troves.CLOSE_TROVE_TYPEHASH(), abi.encode(actors[i], address(router)), dl);
+        vm.prank(actors[i]);
+        router.unwind(sig, dl, 0, dev);
+    }
+
+    function releverOwn(uint256 a, uint256 add, uint256 dev) external {
+        _run("releverOwn", abi.encodeCall(this.doReleverOwn, (a % 3, bound(add, 0.05e18, 1e18), uint16(bound(dev, 0, 2000)))));
+    }
+
+    function doReleverOwn(uint256 i, uint256 add, uint16 dev) external self {
+        uint256 debt = (router.quoteMusdForBtc(add) * 1005) / 1000;
+        uint256 dl = block.timestamp + 1 hours;
+        bytes memory sig = _sig(
+            i, troves.ADJUST_TROVE_TYPEHASH(), abi.encode(uint256(0), debt, true, add, actors[i], address(router)), dl
+        );
+        vm.prank(actors[i]);
+        router.relever(add, debt, address(0), address(0), sig, "", dl, 0, dev);
+    }
+
     function unwind(uint256 a) external {
         _run("unwind", abi.encodeCall(this.doUnwind, (a % 3)));
     }
@@ -360,7 +402,7 @@ contract CoilInvariantTest is CoilBase {
         vm.allowCheatcodes(address(handler));
         targetContract(address(handler));
         // only the fuzzed entry points; the do* bodies are internal steps run under a snapshot
-        bytes4[] memory sel = new bytes4[](24);
+        bytes4[] memory sel = new bytes4[](27);
         sel[0] = CoilHandler.coil.selector;
         sel[1] = CoilHandler.unwind.selector;
         sel[2] = CoilHandler.deleverage.selector;
@@ -385,6 +427,9 @@ contract CoilInvariantTest is CoilBase {
         sel[21] = CoilHandler.fireRecoil.selector;
         sel[22] = CoilHandler.pushIncentives.selector;
         sel[23] = CoilHandler.recoilCycle.selector;
+        sel[24] = CoilHandler.coilOwn.selector;
+        sel[25] = CoilHandler.unwindOwn.selector;
+        sel[26] = CoilHandler.releverOwn.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: sel}));
     }
 

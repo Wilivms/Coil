@@ -15,8 +15,9 @@
  */
 import { createPublicClient, createWalletClient, defineChain, http, parseAbi, formatEther, encodeFunctionData } from 'viem'
 // The RPC's gas estimate has come back far too low right after a state change (32,742 gas on a
-// fireShield that needs ~600k): never send less than this. Only gas used is paid.
-const GAS_FLOOR = 1_500_000n
+// hintless fireShield that used 4.7M): never send less than this. Mezo charges at least half the
+// limit, so the floor stays modest now that fires carry insert hints.
+const GAS_FLOOR = 600_000n
 import { fireHints } from './hints.mjs'
 import { privateKeyToAccount } from 'viem/accounts'
 
