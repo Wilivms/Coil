@@ -203,7 +203,7 @@ function MainnetRadar() {
             <div className="row"><span>MUSD/BTC pool on mainnet</span><span>{d.poolBtc.toFixed(3)} BTC · {Math.round(d.poolMusd).toLocaleString('en-US')} MUSD</span></div>
             <div className="row"><span>MUSD supply · BTC price</span><span>{(d.supply / 1e6).toFixed(1)}M · ${Math.round(d.price).toLocaleString('en-US')}</span></div>
           </div>
-          <div className="tbl-wrap">
+          <div className="tbl-wrap" tabIndex={0} role="region" aria-label="Mainnet redemption queue">
             <table>
               <thead><tr><th>Order</th><th>Trove</th><th>Ratio</th><th>Debt (MUSD)</th><th>Redeemable debt ahead</th></tr></thead>
               <tbody>
