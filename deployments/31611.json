@@ -31,7 +31,8 @@
         {
           "call": "setFee(10)",
           "salt": "fee-0.10pct",
-          "tx": "0x24f8364241596e901b97b4e2d83d1a7b3aa7ae2a5dc041d69713e07a8868c3d0"
+          "tx": "0x24f8364241596e901b97b4e2d83d1a7b3aa7ae2a5dc041d69713e07a8868c3d0",
+          "executedTx": "0x92fd9b15a536d3aed9e3964f75b59cf610191c487e73ad53cb52b2632fbd27c0"
         }
       ],
       "verified": "https://explorer.test.mezo.org/address/0x1e565FFC7400EbC7652839C2E49EFa0BD3179D33#code"

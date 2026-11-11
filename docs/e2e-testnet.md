@@ -137,3 +137,15 @@ before you sign that the Shield can't fire until the Reserve covers it.
 Not reachable on testnet right now: a keeper-fired Recoil. The pool sits ~7% from the oracle and the contract refuses to
 let a keeper buy BTC past 3%, by design; it fired on v3 when the gap was small ([`0xc6176c4a…`](https://explorer.test.mezo.org/tx/0xc6176c4aa4fab70e6f65d9efe99448ba1f77d3680362968ff51f3e9d23ab5b6b)).
 
+## The timelock at work (11–12 Nov 2026)
+
+CoilRouter v4's owner is CoilTimelock `0x1e56…9D33` (OpenZeppelin TimelockController, 24 h delay, no admin, anyone executes).
+Its first operation turns on the 0.10% opening fee:
+
+| Step | Tx |
+|---|---|
+| `schedule(router, 0, setFee(10), 0x0, "fee-0.10pct", 86400)` by a proposer | [`0x24f83642…`](https://explorer.test.mezo.org/tx/0x24f8364241596e901b97b4e2d83d1a7b3aa7ae2a5dc041d69713e07a8868c3d0) |
+| `execute(…)` once the 24 h passed, from a third team wallet (`0xb9c2…E9cc`), not a proposer | [`0x92fd9b15…`](https://explorer.test.mezo.org/tx/0x92fd9b15a536d3aed9e3964f75b59cf610191c487e73ad53cb52b2632fbd27c0) (block 16722941) |
+
+After: `feeBps()` reads 10. Operation id `0x853f7cf9…c900`.
+
