@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAccount, useSwitchChain, useWalletClient } from 'wagmi'
-import { zeroAddress, type Address, type Hash } from 'viem'
+import { encodeFunctionData, zeroAddress, type Abi, type Address, type Hash } from 'viem'
 import { ADDR, COIL_ROUTER, mezoTestnet, ROUTER_V2 } from './chain'
 import { borrowerOpsAbi, bosAbi, coilRouterAbi, erc20Abi, hintHelpersAbi, interestRateManagerAbi, maxCapacityAbi, sortedTrovesAbi, troveManagerAbi } from './abis'
 import { client } from './live'
@@ -56,6 +56,27 @@ export function useCoilActions() {
       await new Promise((res) => setTimeout(res, 2000))
     }
     return null
+  }
+
+  /**
+   * Send a contract call with a gas limit the app estimated itself, retrying the RPC's transient
+   * failures (Mezo testnet's RPC fails an estimate now and then; a wallet would show that as an error).
+   * A real revert is not retried: the wallet gets no gas hint and shows the revert as usual.
+   */
+  type SendReq = { account: Address; chain: typeof mezoTestnet; address: Address; abi: Abi; functionName: string; args?: readonly unknown[]; value?: bigint }
+  async function send(req: SendReq): Promise<Hash> {
+    let gas: bigint | undefined
+    for (let i = 0; i < 3 && gas === undefined; i++) {
+      try {
+        const data = encodeFunctionData({ abi: req.abi, functionName: req.functionName, args: req.args } as never)
+        const est = await client.estimateGas({ account: req.account, to: req.address, data, value: req.value })
+        gas = (est * 13n) / 10n > 9_500_000n ? 9_500_000n : (est * 13n) / 10n
+      } catch (e) {
+        if (/revert/i.test(String((e as Error)?.message))) break
+        await new Promise((r) => setTimeout(r, 1500))
+      }
+    }
+    return wallet!.writeContract({ ...req, ...(gas ? { gas } : {}) } as never)
   }
 
   async function run(label: string, fn: (user: Address) => Promise<Hash>, success: string) {
@@ -140,7 +161,7 @@ export function useCoilActions() {
         const { signature, refinanceSig, collAfter, debtAfter } = await releverSigs(user, addColl, debtIncrease, deadline)
         const [[upper, lower], dev] = await Promise.all([insertHints(collAfter, debtAfter), buyBtcTolerance(addColl)])
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'relever',
           args: [addColl, debtIncrease, upper, lower, signature, refinanceSig, deadline, 0n, dev],
         })
@@ -152,7 +173,7 @@ export function useCoilActions() {
         const deadline = deadlineIn(days * 86_400)
         const { signature, refinanceSig } = await releverSigs(user, addColl, debtIncrease, deadline)
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'armRecoil',
           args: [toWad(triggerIcr), addColl, debtIncrease, 30, deadline, signature, refinanceSig],
         })
@@ -161,7 +182,7 @@ export function useCoilActions() {
     disarmRecoil: () =>
       run('Disarm Recoil', async (user) => {
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'disarmRecoil',
         })
       }, 'Recoil disarmed'),
@@ -178,7 +199,7 @@ export function useCoilActions() {
           ...openTroveTypedData({ assetAmount: plan.totalColl, debtAmount: plan.debtAmount, borrower: user, recipient: COIL_ROUTER!, nonce, deadline }),
         })
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'coil',
           args: [plan.totalColl, plan.debtAmount, upper, lower, signature, deadline, dev], value,
         })
@@ -193,7 +214,7 @@ export function useCoilActions() {
           account: user, ...closeTroveTypedData({ borrower: user, recipient: COIL_ROUTER!, nonce, deadline }),
         })
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'unwind',
           args: [signature, deadline, minBtcOut, dev],
         })
@@ -212,7 +233,7 @@ export function useCoilActions() {
           }),
         })
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'deleverage',
           args: [withdraw, repay, upper, lower, signature, deadline, 0n, dev],
         })
@@ -232,7 +253,7 @@ export function useCoilActions() {
         })
         setStep('send')
         const trigger = BigInt(Math.round(g.trigger)) * 10n ** 18n
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'armGuard',
           args: [trigger, g.withdraw, g.repay, g.minBtcOut, bountyBps, deadline, signature],
         })
@@ -245,14 +266,14 @@ export function useCoilActions() {
         })
         if (allowance < amount) {
           setStep('sign')
-          const h = await wallet!.writeContract({
+          const h = await send({
             account: user, chain: mezoTestnet, address: ADDR.musd, abi: erc20Abi, functionName: 'approve',
             args: [COIL_ROUTER!, amount],
           })
           await client.waitForTransactionReceipt({ hash: h })
         }
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'depositReserve',
           args: [amount],
         })
@@ -261,7 +282,7 @@ export function useCoilActions() {
     withdrawLegacyReserve: () =>
       run('Withdraw v2 Reserve', async (user) => {
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: ROUTER_V2, abi: coilRouterAbi, functionName: 'withdrawReserve',
           args: [(1n << 256n) - 1n],
         })
@@ -270,7 +291,7 @@ export function useCoilActions() {
     withdrawReserve: (amount: bigint) =>
       run('Withdraw Reserve', async (user) => {
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'withdrawReserve',
           args: [amount],
         })
@@ -285,7 +306,7 @@ export function useCoilActions() {
           account: user, ...repayTypedData({ amount: repay, borrower: user, nonce, deadline }),
         })
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'armShield',
           args: [repay, triggerUsd > 0 ? toWad(Math.round(triggerUsd)) : 0n, toWad(maxDebtAheadMusd), toWad(5), deadline, signature],
         })
@@ -294,7 +315,7 @@ export function useCoilActions() {
     disarmShield: () =>
       run('Disarm Shield', async (user) => {
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'disarmShield',
         })
       }, 'Shield disarmed'),
@@ -302,7 +323,7 @@ export function useCoilActions() {
     claimCollateral: () =>
       run('Claim BTC', async (user) => {
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: ADDR.borrowerOps, abi: borrowerOpsAbi, functionName: 'claimCollateral',
         })
       }, 'Leftover BTC claimed'),
@@ -326,15 +347,15 @@ export function useCoilActions() {
         }
         const [upper, lower] = await insertHints(coll, debt)
         const common = { account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi } as const
-        if (kind === 'Shield') return wallet!.writeContract({ ...common, functionName: 'fireShield', args: [owner, upper, lower, 200n] })
-        if (kind === 'Guard') return wallet!.writeContract({ ...common, functionName: 'fireGuard', args: [owner, upper, lower] })
-        return wallet!.writeContract({ ...common, functionName: 'fireRecoil', args: [owner, upper, lower] })
+        if (kind === 'Shield') return send({ ...common, functionName: 'fireShield', args: [owner, upper, lower, 200n] })
+        if (kind === 'Guard') return send({ ...common, functionName: 'fireGuard', args: [owner, upper, lower] })
+        return send({ ...common, functionName: 'fireRecoil', args: [owner, upper, lower] })
       }, 'Fired, the bounty is yours'),
 
     disarmGuard: () =>
       run('Disarm Guard', async (user) => {
         setStep('send')
-        return wallet!.writeContract({
+        return send({
           account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'disarmGuard',
         })
       }, 'Guard disarmed'),

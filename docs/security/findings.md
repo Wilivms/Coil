@@ -15,6 +15,7 @@ Medium = a feature stops working or funds can be stuck, Low = wrong information 
 | 7 | Low | A hintless `fireShield` used 4.7M gas; the RPC estimated 32,742, so a keeper tx could run out of gas | Our on-chain E2E | Keeper, script and app's fire button pass SortedTroves insert hints; gas floor and 9.5M cap | [hinted E2E](../e2e-testnet.md) |
 | 8 | Low | A leverage-up succeeded on-chain but the app showed "failed" (the RPC answered "method handler crashed" to the receipt poll) | UI E2E (`app/e2e/ui-e2e.mjs`) | Confirmations retry through transient RPC errors; never report a failure we can't see | [UI E2E](../e2e-testnet.md) |
 | 9 | Low | "Fire it yourself" racing the keeper showed a raw revert | UI E2E | Explains that it was already fired | app |
+| 9b | Low | Mezo's RPC fails gas estimation now and then: a wallet shows an error on a valid transaction | UI E2E (`FLOW=protect`) | The app estimates gas itself with retries and passes the limit to the wallet | [UI E2E](../e2e-testnet.md) |
 | 10 | Info | Constructor doesn't zero-check `_treasury` | Slither | Deployment parameter, set; `setTreasury` rejects zero and is behind the timelock | [Slither triage](testing.md) |
 | 11 | Info | A keeper's BTC bounty is a native call: could it re-enter? | Self-review | Single flow lock across every entry point | `test_reentrancyFromBountyHitsLock` |
 

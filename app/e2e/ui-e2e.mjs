@@ -159,6 +159,59 @@ await step('coil 0.025 BTC at 2x', async () => {
   await page.waitForTimeout(12_000) // let the app reload the new trove before the next click
 })
 
+if (process.env.FLOW === 'protect') {
+// FLOW=protect: Reserve, Shield, Recoil (and its "do it now" when the pool is past the keeper bound)
+await step('Reserve: add MUSD', async () => {
+  const sec = page.locator('section[aria-labelledby="shield-h"]')
+  await sec.getByRole('button', { name: 'Max' }).click()
+  await sec.getByRole('button', { name: 'Add', exact: true }).click()
+  await waitToast(/Reserve funded/)
+  await page.waitForTimeout(10_000)
+})
+
+await step('Shield: Test it now', async () => {
+  const sec = page.locator('section[aria-labelledby="shield-h"]')
+  await sec.getByRole('button', { name: 'Test it now' }).click()
+  await waitToast(/Shield armed/)
+})
+
+await step('Shield fires (keeper, or fire it yourself)', async () => {
+  const sec = page.locator('section[aria-labelledby="shield-h"]')
+  const until = Date.now() + 150_000
+  while (Date.now() < until) {
+    if (/not armed/i.test(await sec.locator('.pill').first().innerText())) return
+    const fire = sec.getByRole('button', { name: /Fire it yourself/ })
+    if (Date.now() > until - 60_000 && await fire.isVisible().catch(() => false)) { await fire.click(); await page.waitForTimeout(15_000) }
+    await page.waitForTimeout(4000)
+  }
+  throw new Error('Shield still armed')
+})
+
+await step('Recoil: Test it now, then the keeper or "Lever up now"', async () => {
+  const sec = page.locator('section[aria-labelledby="recoil-h"]')
+  await sec.getByRole('button', { name: 'Test it now' }).click()
+  await waitToast(/Recoil armed/)
+  await page.waitForTimeout(12_000)
+  const t = await sec.innerText()
+  if (/Lever up now/.test(t)) {
+    console.log('   pool past the 3% bound: the keeper waits; using "Lever up now"')
+    await sec.getByRole('button', { name: /Lever up now/ }).click()
+    await waitToast(/Leverage increased/)
+  } else {
+    const until = Date.now() + 150_000
+    while (Date.now() < until && !/not armed/i.test(await sec.locator('.pill').first().innerText())) await page.waitForTimeout(4000)
+  }
+  await page.waitForTimeout(10_000)
+})
+
+await step('Reserve: withdraw all', async () => {
+  const sec = page.locator('section[aria-labelledby="shield-h"]')
+  await sec.getByRole('button', { name: 'Withdraw all' }).click()
+  await waitToast(/MUSD back in your wallet/)
+  await page.waitForTimeout(8_000)
+})
+
+} else {
 await step('Guard: Test it now', async () => {
   await page.locator('#guard-h').scrollIntoViewIfNeeded()
   const sec = page.locator('section[aria-labelledby="guard-h"]')
@@ -197,6 +250,8 @@ await step('Deleverage 10%', async () => {
   await waitToast(/Leverage reduced/)
   await page.waitForTimeout(12_000)
 })
+
+}
 
 await step('Unwind', async () => {
   const sec = page.locator('section[aria-labelledby="manage-h"]')

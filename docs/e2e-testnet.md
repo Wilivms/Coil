@@ -101,3 +101,19 @@ Found by these runs and fixed in the app:
 - "Fire it yourself" racing the keeper showed a raw revert; it now says the protection was already fired.
 - Test-only: the injected wallet retries RPC hiccups during gas estimation, as a person would press retry.
 
+### Reserve, Shield and Recoil through the UI (`FLOW=protect`)
+
+| Click in the app | Tx |
+|---|---|
+| Coil 0.025 BTC at 2x | [`0x6720d8f8…`](https://explorer.test.mezo.org/tx/0x6720d8f89db3644a6ab85fea17855383e687fac198e7100402375ede7cf71963) |
+| Reserve: Max, Add (approve + deposit into sMUSD) | [`0x4121a4a5…`](https://explorer.test.mezo.org/tx/0x4121a4a5ec27e36fc60e505b7e2b94064c619dd7f9a21bdda2bb4ca566cc7cdb) |
+| Shield: "Test it now" | [`0x3b7304d9…`](https://explorer.test.mezo.org/tx/0x3b7304d9fa589c19e383cb1d09e5c33e82620c7e6bd7b3952162d8d41ac913f8) |
+| **Keeper fires the Shield 3 blocks later** | [`0xf858c448…`](https://explorer.test.mezo.org/tx/0xf858c4483775876165eff77793e559a53e38414e126e58927cd074f8a2332a4a) |
+| Recoil: "Test it now"; the pool is past the 3% bound, so the app offers Wait or Lever up now → "Lever up now" | [`0x58a72004…`](https://explorer.test.mezo.org/tx/0x58a720045630d0296fa4353af817697d76c9de9a37c4fc70af87edecb80d7c61) |
+| Reserve: Withdraw all (yield included) | [`0x1c281d18…`](https://explorer.test.mezo.org/tx/0x1c281d187613b4a29eeb2f7d14f6279c3d1f5ca3f355b20a3240f01e7e199d77) |
+| Unwind | [`0x741659cd…`](https://explorer.test.mezo.org/tx/0x741659cd56f0308089d193a3fe30106ae82053052f59a789010a5b4d51e89706) |
+
+Found by this run and fixed: Mezo testnet's RPC failed the wallet's gas estimate twice ("invalid parameters"), which a
+real wallet shows as an error. The app now estimates gas itself, retries the RPC's transient failures, and hands the
+wallet a gas limit (a real revert is never retried).
+
