@@ -71,7 +71,8 @@ async function handle(method, params = []) {
 }
 
 const browser = await chromium.launch()
-const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+const { devices } = require('playwright')
+const page = await browser.newPage(process.env.MOBILE ? devices['iPhone 13'] : { viewport: { width: 1440, height: 1000 } })
 page.on('pageerror', (e) => console.log('   pageerror', e.message.slice(0, 160)))
 await page.exposeFunction('__coilWallet', async (method, params) => {
   try { return { ok: await handle(method, params) } } catch (e) {
@@ -149,15 +150,99 @@ await step('connect the wallet', async () => {
   await waitText(new RegExp(account.address.slice(2, 6), 'i'), 30_000).catch(() => {})
 })
 
+if (process.env.FLOW === 'fire-other') {
+  // another wallet opens the owner's trove read-only and fires its due Shield for the bounty
+  await step('open the owner\'s trove read-only and fire its Shield', async () => {
+    await page.goto(`${APP}/#/app?address=${process.env.OWNER}`, { waitUntil: 'networkidle' })
+    await waitText(/Read-only view/, 30_000)
+    const sec = page.locator('section[aria-labelledby="shield-h"]')
+    const fire = sec.getByRole('button', { name: /Fire it yourself/ })
+    await fire.waitFor({ timeout: 90_000 })
+    await fire.click()
+    await waitToast(/Fired, the bounty is yours/)
+  })
+  console.log(JSON.stringify(log))
+  await browser.close()
+  process.exit(0)
+}
+
+if (process.env.FLOW === 'fund') {
+  await step('Reserve: add MUSD', async () => {
+    const sec = page.locator('section[aria-labelledby="shield-h"]')
+    await sec.getByRole('button', { name: 'Max' }).click()
+    await sec.getByRole('button', { name: 'Add', exact: true }).click()
+    await waitToast(/Reserve funded/)
+  })
+  console.log(JSON.stringify(log))
+  await browser.close()
+  process.exit(0)
+}
+
+if (process.env.FLOW === 'unwind') {
+  await step('Unwind', async () => {
+    const sec = page.locator('section[aria-labelledby="manage-h"]')
+    await sec.getByRole('button', { name: /Unwind in one transaction/ }).click()
+    await waitToast(/Position closed/)
+  })
+  console.log(JSON.stringify(log))
+  await browser.close()
+  process.exit(0)
+}
+
+if (process.env.FLOW === 'v2move') {
+  await step('move a Reserve left on v2 back to the wallet', async () => {
+    await waitText(/still in your Reserve on the previous Coil version/, 60_000)
+    await page.getByRole('button', { name: 'Move it to your wallet' }).click()
+    await waitToast(/v2 Reserve back in your wallet/)
+  })
+  console.log(JSON.stringify(log))
+  await browser.close()
+  process.exit(0)
+}
+
+if (process.env.FLOW === 'claim') {
+  // after a redemption closed this wallet's trove: the app offers its leftover BTC
+  await step('claim leftover BTC after a redemption', async () => {
+    await waitText(/Claim [0-9.]+ BTC/, 60_000)
+    await page.getByRole('button', { name: /^Claim [0-9.]+ BTC/ }).click()
+    await waitToast(/Leftover BTC claimed/)
+  })
+  console.log(JSON.stringify(log))
+  await browser.close()
+  process.exit(0)
+}
+
 await step('coil 0.025 BTC at 2x', async () => {
   if (/Your position/.test(await text())) { console.log('   (trove already open: continuing with it)'); return }
-  await page.fill('#deposit', '0.025')
-  await page.getByRole('button', { name: '2×', exact: true }).click()
+  await page.fill('#deposit', process.env.DEPOSIT ?? '0.025')
+  await page.getByRole('button', { name: process.env.LEV ?? '2×', exact: true }).click()
   await page.getByRole('button', { name: /Sign and coil/ }).click()
   await waitToast(/Position open/)
   await waitText(/Your position/, 60_000)
   await page.waitForTimeout(12_000) // let the app reload the new trove before the next click
 })
+
+if (process.env.FLOW === 'queue') {
+  // Shield on the redemption-queue trigger only: fires when less than 250k MUSD of redeemable debt stands ahead
+  await step('Reserve: add MUSD', async () => {
+    const sec = page.locator('section[aria-labelledby="shield-h"]')
+    await sec.getByRole('button', { name: 'Max' }).click()
+    await sec.getByRole('button', { name: 'Add', exact: true }).click()
+    await waitToast(/Reserve funded/)
+    await page.waitForTimeout(10_000)
+  })
+  await step('Shield: queue trigger only (price off, 250k MUSD ahead), Arm', async () => {
+    const sec = page.locator('section[aria-labelledby="shield-h"]')
+    const priceBtn = sec.getByRole('button', { name: /^BTC ≤/ })
+    if ((await priceBtn.getAttribute('aria-pressed')) === 'true') await priceBtn.click()
+    await sec.getByRole('button', { name: '250.0k MUSD', exact: true }).click()
+    await sec.getByRole('button', { name: /^(Re-a|A)rm Shield$/ }).click()
+    await waitToast(/Shield armed/)
+  })
+  console.log(JSON.stringify(log))
+  await browser.close()
+  process.exit(0)
+}
 
 if (process.env.FLOW === 'protect') {
 // FLOW=protect: Reserve, Shield, Recoil (and its "do it now" when the pool is past the keeper bound)

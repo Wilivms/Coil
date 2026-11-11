@@ -30,7 +30,7 @@ App: https://coil-mezo-blitz-bet.vercel.app/#/app · Try: /#/try · Proof (every
 Code: https://github.com/Wilivms/Coil · Deck: docs/Coil-deck.pdf · E2E: docs/e2e-testnet.md
 CoilRouter v4 0x17e056ef7e076Fbcb806dF9916552A26Da527F03 + CoilLens 0xa821…d8f5, source-verified
 
-WHY: on Mezo mainnet MUSD logged 1,279 redemptions vs 28 liquidations (5.94M MUSD, 79.6 BTC taken). Redemptions hit the lowest-ratio troves first: a leveraged trove. Coil is leverage built for that.
+WHY: on Mezo mainnet MUSD logged 1,279 redemptions vs 28 liquidations (5.94M MUSD, 79.6 BTC taken). They hit the lowest-ratio troves first. On testnet, a bot redeemed our test trove at the front of the queue in under 2 minutes. Coil is built for that.
 
 WAVE 1 FEEDBACK
 1. Keeper sandwich (High): fixed. Every swap is bounded by MUSD's PriceFeed and Guard stores a signed minBtcOut; the sandwich replay test reverts.
@@ -42,7 +42,7 @@ WAVE 1 FEEDBACK
 NEW IN WAVE 2
 - Shield redemption trigger: fires when less than X MUSD stands ahead of the trove, proved on-chain by walking SortedTroves.
 - Leverage up in one tx (adds a Refinance signature when MUSD's capacity is short) and Recoil, a signed leverage-up the keeper runs once the ratio is back.
-- 0.05% of each coil's debt to the MUSD/BTC gauge incentives, live on testnet.
+- 0.05% of each coil's debt to the MUSD/BTC gauge, live.
 - v4, found by our own E2E: the testnet pool drifted 5.5% from the oracle, past our 5% cap, and every coil reverted. Now the borrower may accept a wider gap (max 20%) on a trade they send; the app sets it from the live quote and shows it. Keeper flows stay on 3%: on-chain, fireRecoil was refused at that gap.
 - App: cost vs the oracle (MUSD) before each signature; wait-or-act when the pool is past the keeper bound; fire-it-yourself; read-only ?address= view; live keeper health and mainnet queue on /proof.
 - Owner behind a 24 h OpenZeppelin timelock; its first proposal (the 0.10% fee) is public on-chain.

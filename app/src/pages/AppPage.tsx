@@ -983,6 +983,12 @@ function ShieldPanel({ m, position, live, trigger, reserve, shield, actions, fir
         <p className="field__hint" style={{ margin: 0 }}>
           On Mezo the common way to lose a position is a redemption, not a liquidation: redeemers swap MUSD for the BTC of the lowest-ratio troves first, and leveraged troves sit near the front. The Shield watches that queue on-chain. When too little debt stands before you, a keeper repays part of your debt from the Reserve, which moves you back. It only repays, so it also works in Recovery Mode, when collateral can't leave a trove.
         </p>
+        {live && sp.ok && reserveMusd < needed && (
+          <p className="note note--danger" style={{ margin: 0 }}>
+            Your Reserve holds {fmtNum(reserveMusd)} MUSD and this Shield needs {fmtNum(needed)}. You can arm it now, but it can only fire once
+            you add {fmtNum(needed - reserveMusd)} MUSD (or pick a smaller repayment).
+          </p>
+        )}
         <StepList step={actions.step} active={actions.busy === 'Arm Shield'} labels={['Sign the repayment', 'Store it with the triggers', 'Mezo confirms']} />
         <div className="cta-row">
           <button className="btn" disabled={!live || !sp.ok || !!actions.busy || !actions.ready}

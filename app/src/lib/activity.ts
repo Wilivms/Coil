@@ -33,6 +33,7 @@ export const TEAM_WALLETS: Record<string, string> = {
   '0xcfe7934d31f6c22ddafed72fc065d13eff48b368': 'founder (Rabby), treasury, v1 deployer',
   '0x329a3f41fe946c06308f293c438eba2a689e34ab': 'ops: v2-v4 deployer and owner, E2E runs',
   '0x09b657b9e093a7c13945adb2b1b5397d0e82e2a1': 'keeper (GitHub Actions)',
+  '0x2f8d64b18750ad18169027382ccf19b6dae5ea94': 'test wallet A: edge cases (queue Shield, redemption claim, v2 Reserve)',
 }
 export const isTeam = (a: string) => a.toLowerCase() in TEAM_WALLETS
 

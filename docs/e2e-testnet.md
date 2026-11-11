@@ -117,3 +117,23 @@ Found by this run and fixed: Mezo testnet's RPC failed the wallet's gas estimate
 real wallet shows as an error. The app now estimates gas itself, retries the RPC's transient failures, and hands the
 wallet a gas limit (a real revert is never retried).
 
+## Edge cases with a second test wallet (11 Nov 2026)
+
+Test wallet A (`0x2f8d…ea94`, listed as a team wallet on /proof) covered what normal use doesn't reach:
+
+| What | How | Tx |
+|---|---|---|
+| A plain MUSD trove (not opened with Coil) at 112%, the front of the redemption queue | `keeper/scenario.mjs open-tail` | [`0xb8505192…`](https://explorer.test.mezo.org/tx/0xb8505192d1fbe9933fbc7cbe3604b71d2e59aaf69f44a163f1818acac9519cd6) |
+| **A redemption bot already on testnet redeemed it, under 2 minutes later**: exactly the risk Coil is built for | not us: `0xD13F…6c67` | [`0xef69c012…`](https://explorer.test.mezo.org/tx/0xef69c012303d870e04a1fb7d1f4efe81e32ea8124dacccd9eb5dd68aa7e6c979) |
+| Claim the leftover BTC (0.00597 BTC) from the app's banner | UI, `FLOW=claim` | [`0xa10138d2…`](https://explorer.test.mezo.org/tx/0xa10138d225682d9b23769327969c5a235897956d0c26330b2511f12e115b3f63) |
+| Move a Reserve left on v2 back to the wallet, **on a phone** (iPhone 13 emulation) | UI, `MOBILE=1 FLOW=v2move` | [`0xbecb5e2b…`](https://explorer.test.mezo.org/tx/0xbecb5e2b77b38de32107764bba140967fb0e9f79279735ca68ca443cb55f40ef) |
+| 4x coil, Reserve, Shield on the **redemption-queue trigger only** (price off, ≤ 250k MUSD ahead; 12,324 stood ahead) | UI, `FLOW=queue` | [`0x2ac212b5…`](https://explorer.test.mezo.org/tx/0x2ac212b5dd8e7036ef2836d6812dadd43bca65a40d70c77f29568551262e22b6) |
+| **Another wallet fires it from the read-only view** (`#/app?address=…`, "Fire it yourself"), keeper paused: `byQueue = true`, 1,235 MUSD repaid, the 5 MUSD bounty to wallet A | UI, `FLOW=fire-other` | [`0xca1197da…`](https://explorer.test.mezo.org/tx/0xca1197dabe9dbab09aa7f5d921b38f38ed95919202c70f062fc963aba1268877) |
+| Unwind | UI, `FLOW=unwind` | [`0xc380b68f…`](https://explorer.test.mezo.org/tx/0xc380b68fed8271b0d4bf83870f7a930af1ad51defafb686aa99a7244c5a18ca8) |
+
+Found and fixed: the app let you arm a Shield bigger than your Reserve with only a status pill to say so; it now warns
+before you sign that the Shield can't fire until the Reserve covers it.
+
+Not reachable on testnet right now: a keeper-fired Recoil. The pool sits ~7% from the oracle and the contract refuses to
+let a keeper buy BTC past 3%, by design; it fired on v3 when the gap was small ([`0xc6176c4a…`](https://explorer.test.mezo.org/tx/0xc6176c4aa4fab70e6f65d9efe99448ba1f77d3680362968ff51f3e9d23ab5b6b)).
+
