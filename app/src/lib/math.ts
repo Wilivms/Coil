@@ -172,7 +172,8 @@ export function planShield(t: Trove, share: number, trigger: number, minNetDebt 
   const D = fromWad(t.debt)
   const maxRepay = D - (minNetDebt + 200)
   const repay = Math.min(D * share, maxRepay)
-  if (repay <= 0) return { repay: 0n, crAfterAtTrigger: (C * trigger) / D, debtAfter: D, ok: false, reason: 'Debt is already at the 1,800 MUSD minimum' }
+  // MUSD keeps every trove at 2,000 MUSD of debt or more; under 10 MUSD of headroom a Shield has nothing useful to repay
+  if (repay < 10) return { repay: 0n, crAfterAtTrigger: (C * trigger) / D, debtAfter: D, ok: false, reason: `Your debt is within ${Math.max(0, Math.floor(maxRepay))} MUSD of MUSD's 2,000 minimum, so a Shield has nothing to repay. Open a larger position, or rely on Guard.` }
   return { repay: toWad(Math.floor(repay)), crAfterAtTrigger: (C * trigger) / (D - repay), debtAfter: D - repay, ok: true }
 }
 

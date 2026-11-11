@@ -17,6 +17,7 @@ Medium = a feature stops working or funds can be stuck, Low = wrong information 
 | 9 | Low | "Fire it yourself" racing the keeper showed a raw revert | UI E2E | Explains that it was already fired | app |
 | 9b | Low | Mezo's RPC fails gas estimation now and then: a wallet shows an error on a valid transaction | UI E2E (`FLOW=protect`) | The app estimates gas itself with retries and passes the limit to the wallet | [UI E2E](../e2e-testnet.md) |
 | 9c | Low | A Shield bigger than the Reserve could be armed with only a status pill to say it can't fire | Edge-case run (`FLOW=queue`) | Warning before signing, with the MUSD missing | [edge cases](../e2e-testnet.md) |
+| 9d | Low | On a trove close to MUSD's 2,000 debt floor, the app planned a 0-MUSD Shield and let you sign it; the contract rejected it | Filming the demo | No Shield when there's under 10 MUSD of headroom, with the reason shown; unit test | `math.test.ts` |
 | 10 | Info | Constructor doesn't zero-check `_treasury` | Slither | Deployment parameter, set; `setTreasury` rejects zero and is behind the timelock | [Slither triage](testing.md) |
 | 11 | Info | A keeper's BTC bounty is a native call: could it re-enter? | Self-review | Single flow lock across every entry point | `test_reentrancyFromBountyHitsLock` |
 

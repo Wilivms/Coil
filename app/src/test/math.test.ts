@@ -68,6 +68,12 @@ describe('planClose / planGuard / planShield / releverPlan', () => {
   it('a Guard below the liquidation price is refused', () => {
     expect(planGuard(m, t, 50_000, 1.6).ok).toBe(false)
   })
+  it('a Shield on a trove at the debt floor has nothing to repay and says so (never a 0-MUSD order)', () => {
+    const s = planShield({ ...t, debt: 2_000_600n * 10n ** 15n }, 0.25, 70_000)
+    expect(s.ok).toBe(false)
+    expect(s.repay).toBe(0n)
+    expect(s.reason).toMatch(/nothing to repay/)
+  })
   it('a Shield never repays under the minimum debt', () => {
     const s = planShield({ ...t, debt: 2_100n * e18 }, 0.5, 70_000)
     expect(s.debtAfter).toBeGreaterThanOrEqual(2000)

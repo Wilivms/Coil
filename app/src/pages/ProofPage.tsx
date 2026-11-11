@@ -102,7 +102,7 @@ export function ProofPage() {
         </section>
 
         <section className="panel" style={{ marginBottom: 24 }}>
-          <div className="panel__h"><h2>Every flow, run on-chain</h2><span className="mono muted">first occurrence in Wave 2 (v2 or v3)</span></div>
+          <div className="panel__h"><h2>Every flow, run on-chain</h2><span className="mono muted">first occurrence in Wave 2 (v2 to v4)</span></div>
           <div className="panel__b">
             <ol className="act act--steps">
               {MILESTONES.map((m) => {
