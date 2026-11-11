@@ -1,6 +1,7 @@
 import { COIL_LENS, COIL_ROUTER, explorerAddr, explorerTx, GAUGE_INCENTIVES, ROUTER_V1, ROUTER_V2, ROUTER_V3 } from '../lib/chain'
 import { DEPLOY_TX, TEAM_WALLETS, useActivity, type ActivityItem, type ActivityKind } from '../lib/activity'
 import { shortAddr } from '../lib/format'
+import { useKeeperStatus } from '../lib/keeperStatus'
 
 const REPO = 'https://github.com/Wilivms/Coil'
 const V2_DEPLOY_TX = '0xac47acbe97dbf0412a1f2dd2667384572529950859a518d4eb25f27afb2be6d0'
@@ -142,6 +143,7 @@ export function ProofPage() {
             <p className="field__hint" style={{ margin: 0 }}>
               A GitHub Action polls Mezo every 15 seconds and chains itself run after run. It fires any Guard, Shield or Recoil whose condition holds and pushes the gauge incentives; the contract re-checks the condition, so a keeper can only fire what is due. Anyone can run the same script from <code>keeper/</code>.
             </p>
+            <KeeperHealth />
           </div>
         </section>
 
@@ -162,3 +164,26 @@ export function ProofPage() {
     </main>
   )
 }
+
+function minsAgo(t?: number) {
+  if (!t) return '…'
+  const m = Math.max(0, Math.round((Date.now() - t) / 60_000))
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`
+}
+
+/** Live from the GitHub Actions API: is the keeper up right now, and has it been. */
+function KeeperHealth() {
+  const k = useKeeperStatus()
+  if (k.isError) return <p className="field__hint" style={{ margin: 0 }}>Live status unavailable (GitHub API rate limit); the runs are on the Actions tab.</p>
+  const d = k.data
+  const fresh = !!d?.lastStart && Date.now() - d.lastStart < 12 * 60_000
+  return (
+    <div className="rows" aria-live="polite">
+      <div className="row"><span>Status</span><span className="pill" data-s={d ? (d.running || fresh ? 'ok' : 'watch') : 'idle'}>{!d ? 'Checking…' : d.running ? 'Running now' : fresh ? 'Between runs' : 'Not seen for 12 min'}</span></div>
+      <div className="row"><span>Last run started</span><span>{minsAgo(d?.lastStart)}</span></div>
+      <div className="row"><span>Recent runs that succeeded</span><span>{d ? `${d.ok} / ${d.recent}` : '…'}</span></div>
+      <div className="row"><span>Longest gap between runs, last {d ? Math.max(1, Math.round(d.coveredHours)) : '…'} h</span><span>{d ? `${Math.round(d.gapMinutes)} min` : '…'}</span></div>
+    </div>
+  )
+}
+

@@ -17,6 +17,7 @@ import { createPublicClient, createWalletClient, defineChain, http, parseAbi, fo
 // The RPC's gas estimate has come back far too low right after a state change (32,742 gas on a
 // fireShield that needs ~600k): never send less than this. Only gas used is paid.
 const GAS_FLOOR = 1_500_000n
+import { fireHints } from './hints.mjs'
 import { privateKeyToAccount } from 'viem/accounts'
 
 const mezoTestnet = defineChain({
@@ -83,8 +84,8 @@ async function fire(kind, user, functionName, args, unit) {
     })
     console.log(`[${kind}] ${user} is due, bounty ≈ ${formatEther(result)} ${unit}`)
     if (DRY) return
-    // Hints are zero, so MUSD's SortedTroves walks the list: leave a 50% gas margin so an inner
-    // call can't run out of gas (63/64 rule) while the estimate still passes.
+    // Insert hints keep MUSD's SortedTroves walk short; still leave a 50% gas margin so an inner
+    // call can't run out of gas (63/64 rule) while the estimate passes.
     const gas = await pub.estimateGas({ account, to: ROUTER, data: encodeFunctionData({ abi, functionName, args }) })
     const hash = await wallet.writeContract({ ...request, gas: [(gas * 3n) / 2n, GAS_FLOOR, 9_500_000n].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))[1] }) // clamp to [floor, 9.5M]; Mezo's block limit is 10M
     const rc = await pub.waitForTransactionReceipt({ hash })
@@ -101,7 +102,7 @@ async function tick() {
   for (const user of guards) {
     const [armed, fresh, triggered] = await pub.readContract({ address: LENS, abi: lensAbi, functionName: 'guardStatus', args: [user] })
     if (!armed) { guards.delete(user); continue }
-    if (fresh && triggered) await fire('guard', user, 'fireGuard', [user, ZERO, ZERO], 'BTC')
+    if (fresh && triggered) await fire('guard', user, 'fireGuard', [user, ...(await fireHints(pub, ROUTER, 'guard', user))], 'BTC')
   }
   for (const user of shields) {
     const [armed, fresh, funded, byPrice, byQueue, ahead] = await pub.readContract({
@@ -110,7 +111,7 @@ async function tick() {
     if (!armed) { shields.delete(user); continue }
     if (fresh && funded && (byPrice || byQueue)) {
       console.log(`[shield] ${user}: ${byQueue ? `${formatEther(ahead)} MUSD ahead in the redemption queue` : 'price trigger'}`)
-      await fire('shield', user, 'fireShield', [user, ZERO, ZERO, STEPS], 'MUSD')
+      await fire('shield', user, 'fireShield', [user, ...(await fireHints(pub, ROUTER, 'shield', user)), STEPS], 'MUSD')
     }
   }
   for (const user of recoils) {
@@ -118,7 +119,7 @@ async function tick() {
     if (!armed) { recoils.delete(user); continue }
     if (fresh && triggered) {
       console.log(`[recoil] ${user}: ratio ${(Number(icr) / 1e16).toFixed(0)}%, back to target leverage`)
-      await fire('recoil', user, 'fireRecoil', [user, ZERO, ZERO], 'MUSD')
+      await fire('recoil', user, 'fireRecoil', [user, ...(await fireHints(pub, ROUTER, 'recoil', user))], 'MUSD')
     }
   }
   // gauge incentives: push what was collected, at most every 10 minutes

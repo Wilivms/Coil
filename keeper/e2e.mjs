@@ -10,6 +10,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { createPublicClient, createWalletClient, defineChain, http, parseAbi, encodeFunctionData, parseEther, formatEther } from 'viem'
+import { fireHints, hintsFor } from './hints.mjs'
 import { privateKeyToAccount } from 'viem/accounts'
 
 const chain = defineChain({
@@ -140,7 +141,7 @@ const totalColl = (deposit * BigInt(Math.round(lev * 1000))) / 1000n
 const flash = totalColl - deposit
 const debt = ((await r('quoteMusdForBtc', [flash])) * 112n) / 100n
 dl = deadline()
-await send('coil', ROUTER, router, 'coil', [totalColl, debt, Z, Z,
+await send('coil', ROUTER, router, 'coil', [totalColl, debt, ...(await hintsFor(pub, totalColl, (debt * 1001n) / 1000n + 200n * WAD)),
   await sign('OpenTrove', { assetAmount: totalColl, debtAmount: debt, borrower: me, recipient: ROUTER, deadline: dl }), dl, await buyTol(flash)], deposit)
 let [c, pr, int] = await trove()
 console.log(`  trove ${fmt(c)} BTC / ${fmt(pr + int, 0)} MUSD  ICR ${fmt(await pub.readContract({ address: TM, abi: other, functionName: 'getCurrentICR', args: [me, await price()] }), 3)}`)
@@ -156,17 +157,17 @@ dl = deadline(86400)
 await send('armShield', ROUTER, router, 'armShield', [repay, ((await price()) * 110n) / 100n, 0n, bounty, dl,
   await sign('RepayMUSD', { amount: repay, borrower: me, deadline: dl })])
 await waitForKeeper('fireShield', async () => (await r('shieldOf', [me]))[6] !== '0x',
-  () => send('fireShield', ROUTER, router, 'fireShield', [me, Z, Z, 200n]))
+  async () => send('fireShield', ROUTER, router, 'fireShield', [me, ...(await fireHints(pub, ROUTER, 'shield', me)), 200n]))
 
 } else if ((await r('shieldOf', [me]))[6] !== '0x') {
-  await send('fireShield', ROUTER, router, 'fireShield', [me, Z, Z, 200n])
+  await send('fireShield', ROUTER, router, 'fireShield', [me, ...(await fireHints(pub, ROUTER, 'shield', me)), 200n])
 }
 
 // 4. leverage up
 const add = deposit / 3n
 const inc = ((await r('quoteMusdForBtc', [add])) * 1015n) / 1000n
 dl = deadline()
-await send('relever', ROUTER, router, 'relever', [add, inc, Z, Z,
+await send('relever', ROUTER, router, 'relever', [add, inc, ...(await hintsFor(pub, (await trove())[0] + add, (await trove())[1] + (inc * 1001n) / 1000n)),
   await sign('AdjustTrove', { collWithdrawal: 0n, debtChange: inc, isDebtIncrease: true, assetAmount: add, borrower: me, recipient: ROUTER, deadline: dl }), '0x', dl, 0n, await buyTol(add)])
 
 // 5. Recoil, trigger at MCR so it is due now
@@ -177,7 +178,7 @@ await send('armRecoil', ROUTER, router, 'armRecoil', [11n * WAD / 10n, add2, inc
   await sign('AdjustTrove', { collWithdrawal: 0n, debtChange: inc2, isDebtIncrease: true, assetAmount: add2, borrower: me, recipient: ROUTER, deadline: dl }), '0x'])
 if ((await buyTol(add2)) === 0) {
   await waitForKeeper('fireRecoil', async () => (await r('recoilOf', [me]))[6] !== '0x',
-    () => send('fireRecoil', ROUTER, router, 'fireRecoil', [me, Z, Z]))
+    async () => send('fireRecoil', ROUTER, router, 'fireRecoil', [me, ...(await fireHints(pub, ROUTER, 'recoil', me))]))
 } else {
   // The pool prices BTC past the 3% bound: a keeper must not buy BTC for the user there, whatever the bounty.
   try {
@@ -198,13 +199,13 @@ dl = deadline(86400)
 await send('armGuard', ROUTER, router, 'armGuard', [((await price()) * 110n) / 100n, gWithdraw, gRepay, gWithdraw / 50n, 50, dl,
   await sign('AdjustTrove', { collWithdrawal: gWithdraw, debtChange: gRepay, isDebtIncrease: false, assetAmount: 0n, borrower: me, recipient: ROUTER, deadline: dl })])
 await waitForKeeper('fireGuard', async () => (await r('guardOf', [me]))[7] !== '0x',
-  () => send('fireGuard', ROUTER, router, 'fireGuard', [me, Z, Z]))
+  async () => send('fireGuard', ROUTER, router, 'fireGuard', [me, ...(await fireHints(pub, ROUTER, 'guard', me))]))
 
 // 7. manual deleverage
 const dRepay = 200n * WAD
 const dWithdraw = ((await r('quoteBtcForMusd', [dRepay])) * 105n) / 100n
 dl = deadline()
-await send('deleverage', ROUTER, router, 'deleverage', [dWithdraw, dRepay, Z, Z,
+await send('deleverage', ROUTER, router, 'deleverage', [dWithdraw, dRepay, ...(await hintsFor(pub, (await trove())[0] - dWithdraw, (await trove())[1] - dRepay)),
   await sign('AdjustTrove', { collWithdrawal: dWithdraw, debtChange: dRepay, isDebtIncrease: false, assetAmount: 0n, borrower: me, recipient: ROUTER, deadline: dl }), dl, 1n, await sellTol(dRepay)])
 
 // 8. incentives to the gauge (the keeper pushes them every 10 min; push now if any are left)
