@@ -79,7 +79,11 @@ export function useCoilActions() {
       await Promise.all(['trove', 'guard', 'market', 'radar', 'activity', 'reserve', 'shield', 'surplus', 'recoil'].map((k) => qc.invalidateQueries({ queryKey: [k] })))
     } catch (e) {
       setStep('idle')
-      toast.push({ kind: 'err', title: `${label} failed`, body: explainError(e) })
+      const firing = label.startsWith('Fire ')
+      toast.push({
+        kind: 'err', title: `${label} failed`,
+        body: firing && !/rejected|denied/i.test(String((e as Error)?.message)) ? 'Someone fired it first (usually the keeper), or it is no longer due. Nothing was lost.' : explainError(e),
+      })
     } finally {
       setBusy(null)
       setTimeout(() => setStep('idle'), 2500)

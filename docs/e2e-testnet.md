@@ -77,3 +77,27 @@ already had them). The keeper fired the Shield and the Guard on its own; the Rec
 
 Mezo charges at least half of a transaction's gas limit, so with hints in place the send floor drops from 1.5M to 600k.
 
+## Through the app's own UI (11 Nov 2026)
+
+`app/e2e/ui-e2e.mjs` drives the live site like a person would: a real browser (Playwright), the real UI, and a test
+wallet injected as `window.ethereum` that signs with a local key. Every click is a real testnet transaction.
+
+    cd app && E2E_KEY_FILE=path/to/key node e2e/ui-e2e.mjs      # APP_URL defaults to the live site
+
+| Click in the app | Tx |
+|---|---|
+| Coil 0.025 BTC at 2x (Sign and coil) | [`0xdc38cc75…`](https://explorer.test.mezo.org/tx/0xdc38cc75fc654a48d74e452438bc9483eb862bcc77ddef8111f0fb74502351d8) |
+| Guard: "Test it now" | [`0x8a079cea…`](https://explorer.test.mezo.org/tx/0x8a079ceace03ed766e7e82fa8d05eb4c022702cd6c1baf5c4da0fba80c5d3ddf) |
+| Leverage up +0.25x | [`0x33055ece…`](https://explorer.test.mezo.org/tx/0x33055ecedec21868a3243a832b59334db9c373356857982187b91700f075d24f) |
+| Deleverage 10% | [`0x6120f205…`](https://explorer.test.mezo.org/tx/0x6120f205db922f69cabf604d7f240b5ad5141a337e5a36bb524cd85bc5765ed3) |
+| Unwind | [`0x72d81a47…`](https://explorer.test.mezo.org/tx/0x72d81a478c11ed30b98dcd0f113e4dae3f05cf0515926119ecf88d879604d909) |
+
+The Guard armed from the app was fired by the keeper on its own between "Test it now" and "Leverage up".
+
+Found by these runs and fixed in the app:
+- A leverage-up **succeeded** on-chain while Mezo's RPC answered "method handler crashed" to the receipt poll, and the
+  app showed "Leverage up failed". Confirmations now ride out transient RPC errors; a transaction that went through can
+  no longer show as failed.
+- "Fire it yourself" racing the keeper showed a raw revert; it now says the protection was already fired.
+- Test-only: the injected wallet retries RPC hiccups during gas estimation, as a person would press retry.
+

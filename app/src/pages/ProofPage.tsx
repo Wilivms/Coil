@@ -43,6 +43,8 @@ const TESTS: [string, string][] = [
   ['Pool 5.8% off the oracle: the borrower can still open and close; a keeper still can\'t widen the bound', 'CoilOwnTolerance.t.sol (9 tests)'],
   ['Mainnet: real MUSD + sMUSD, Shield repays a real mainnet trove', 'test_mainnet_reserveAndShieldOnRealMusd'],
   ['Mainnet: the shallow pool is refused by the oracle bound, not paid', 'test_mainnet_coilRefusedOnShallowPool'],
+  ['The app itself, clicked through on testnet: coil, Guard, leverage up, deleverage, unwind', 'app/e2e/ui-e2e.mjs'],
+  ['App signatures equal MUSD\'s EIP-712 digests; pool math and cost lines', 'app/src/test (27 tests)'],
   ['Router never keeps BTC or MUSD, never owns a trove, Reserve always backed', 'invariant_* (random flows + pool attacks)'],
 ]
 

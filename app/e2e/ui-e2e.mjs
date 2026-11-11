@@ -42,9 +42,26 @@ async function handle(method, params = []) {
     case 'personal_sign': return account.signMessage({ message: { raw: params[0] } })
     case 'eth_sendTransaction': {
       const t = params[0]
-      const hash = await wallet.sendTransaction({
-        to: t.to, data: t.data, value: t.value ? BigInt(t.value) : 0n, gas: t.gas ? BigInt(t.gas) : undefined,
-      })
+      if (process.env.DEBUG) {
+        try { await pub.call({ account: account.address, to: t.to, data: t.data, value: t.value ? BigInt(t.value) : 0n }) }
+        catch (e) { console.log('   revert:', (e.shortMessage ?? '').slice(0, 120), '|', (e.cause?.data ?? e.data ?? e.details ?? '').toString().slice(0, 200)) }
+      }
+      // Mezo testnet's RPC sometimes fails a request outright ("handler crashed", "invalid parameters");
+      // a wallet would show that and let you retry, so the test wallet retries it (never a revert).
+      let hash
+      for (let i = 0; ; i++) {
+        try {
+          hash = await wallet.sendTransaction({
+            to: t.to, data: t.data, value: t.value ? BigInt(t.value) : 0n, gas: t.gas ? BigInt(t.gas) : undefined,
+          })
+          break
+        } catch (e) {
+          const m = e.shortMessage ?? e.message
+          if (i >= 4 || /revert/i.test(m) || !/invalid parameters|internal error|handler crashed|timed out|fetch failed/i.test(m)) throw e
+          console.log('   RPC hiccup, retrying:', m.split('\n')[0])
+          await new Promise((r) => setTimeout(r, 3000))
+        }
+      }
       log.push({ hash })
       console.log('   tx', hash)
       return hash

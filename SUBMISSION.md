@@ -35,7 +35,7 @@ WHY: on Mezo mainnet MUSD logged 1,279 redemptions vs 28 liquidations (5.94M MUS
 WAVE 1 FEEDBACK
 1. Keeper sandwich (High): fixed. Every swap is bounded by MUSD's PriceFeed and Guard stores a signed minBtcOut; the sandwich replay test reverts.
 2. Recovery Mode: Shield, a signed RepayMUSD funded by a Reserve in Mezo's sMUSD (earns yield). Repay-only, so it works when Guard can't.
-3. Keeper end to end: always-on GitHub Actions keeper (15 s). On v3 it fired a Shield, a Recoil and a Guard on its own: docs/e2e-testnet.md.
+3. Keeper end to end: always-on GitHub Actions keeper (15 s). On v3 and v4 it fired Shields, a Recoil and Guards on its own.
 4. Outside wallets: Guard/Shield now work on any MUSD trove; /try onboarding. Honest count on /proof.
 5. Verify, video, no forced intro: done.
 
@@ -43,16 +43,16 @@ NEW IN WAVE 2
 - Shield redemption trigger: fires when less than X MUSD stands ahead of the trove, proved on-chain by walking SortedTroves.
 - Leverage up in one tx (adds a Refinance signature when MUSD's capacity is short) and Recoil, a signed leverage-up the keeper runs once the ratio is back.
 - 0.05% of each coil's debt to the MUSD/BTC gauge incentives, live on testnet.
-- v4, found by our own E2E: the testnet pool drifted 5.5% from the oracle, past our 5% cap, and every coil reverted. Now the borrower may accept a wider gap (max 20%) on a trade they send; the app sets it from the live quote and shows it. Keeper flows stay on 3%: on-chain, fireRecoil was refused at that gap. Full v4 E2E at the gap: docs/e2e-testnet.md.
+- v4, found by our own E2E: the testnet pool drifted 5.5% from the oracle, past our 5% cap, and every coil reverted. Now the borrower may accept a wider gap (max 20%) on a trade they send; the app sets it from the live quote and shows it. Keeper flows stay on 3%: on-chain, fireRecoil was refused at that gap.
 - App: cost vs the oracle (MUSD) before each signature; wait-or-act when the pool is past the keeper bound; fire-it-yourself; read-only ?address= view; live keeper health and mainnet queue on /proof.
 - Owner behind a 24 h OpenZeppelin timelock; its first proposal (the 0.10% fee) is public on-chain.
 - Also fixed: pending redistribution double count, claim of leftover BTC, an RPC gas estimate ~140x too low (fires now use hints).
 
-TESTS: 107 unit/fuzz/invariant (96.9% line coverage, 10k-run fuzz) + 9 fork tests on the real Mezo contracts, testnet and mainnet: Shield repays a real mainnet trove from mainnet sMUSD. Slither triaged. CI on every push.
+TESTS: the app clicked through on testnet (docs/e2e-testnet.md); 27 app tests; 107 unit/fuzz/invariant (97% line coverage) + 9 fork tests on the real Mezo contracts, testnet and mainnet: Shield repays a real mainnet trove from mainnet sMUSD. Slither triaged; CI on every push.
 
 WHY NOT MAINNET: the mainnet MUSD/BTC pool holds 0.48 BTC; a 0.05 BTC flash pays ~12% over fair. The mainnet fork test shows Coil refuses it. Reserve and Shield need no pool and already pass on a mainnet fork.
 
-BUSINESS: 0.10% open fee (0.5% cap), keeper bounties, interest to sMUSD via PCV.
+BUSINESS: 0.10% open fee (0.5% cap), keeper bounties, interest to sMUSD.
 
 DISCLOSURE: testnet only, not audited. All E2E txs are from team wallets, listed on /proof; outside wallets are counted apart. The owner is a 24 h OpenZeppelin timelock (fee and default tolerance only, within hard caps).
 
