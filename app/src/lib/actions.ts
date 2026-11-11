@@ -42,6 +42,22 @@ export function useCoilActions() {
 
   const ready = !!address && !!wallet && !!COIL_ROUTER
 
+  /**
+   * Wait for a receipt, riding out the RPC's transient errors (Mezo testnet answers "method handler
+   * crashed" now and then): a transaction that went through must never show as failed.
+   */
+  async function confirm(hash: Hash) {
+    const until = Date.now() + 120_000
+    while (Date.now() < until) {
+      try {
+        const r = await client.getTransactionReceipt({ hash })
+        if (r) return r
+      } catch { /* not mined yet, or a transient RPC error */ }
+      await new Promise((res) => setTimeout(res, 2000))
+    }
+    return null
+  }
+
   async function run(label: string, fn: (user: Address) => Promise<Hash>, success: string) {
     if (!address || !wallet) return toast.push({ kind: 'err', title: 'Connect a wallet first' })
     if (!COIL_ROUTER) return toast.push({ kind: 'err', title: 'Router not deployed', body: 'Deploy CoilRouter and set VITE_COIL_ROUTER.' })
@@ -50,7 +66,13 @@ export function useCoilActions() {
       if (chainId !== mezoTestnet.id) await switchChainAsync({ chainId: mezoTestnet.id })
       const hash = await fn(address)
       setStep('confirm')
-      const receipt = await client.waitForTransactionReceipt({ hash })
+      const receipt = await confirm(hash)
+      if (!receipt) {
+        // sent, but the RPC could not confirm it in time: never report a failure we can't see
+        setStep('done')
+        toast.push({ kind: 'ok', title: `${label}: sent`, body: 'Mezo has not confirmed it yet; it will show here once it does.', tx: hash })
+        return
+      }
       if (receipt.status !== 'success') throw new Error('Transaction reverted')
       setStep('done')
       toast.push({ kind: 'ok', title: success, tx: hash })
