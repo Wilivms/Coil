@@ -1,6 +1,6 @@
 import { parseAbi } from 'viem'
 
-/** CoilRouter v3: oracle-bounded swaps, Guard, sMUSD Reserve, Shield, relever, Recoil, gauge incentives. */
+/** CoilRouter v4: oracle-bounded swaps (own tolerance on borrower-sent trades), Guard, sMUSD Reserve, Shield, relever, Recoil, gauge incentives. */
 export const coilRouterAbi = parseAbi([
   'function coil(uint256 totalColl, uint256 debtAmount, address upperHint, address lowerHint, bytes signature, uint256 deadline) payable returns (uint256)',
   'function unwind(bytes signature, uint256 deadline, uint256 minBtcOut) returns (uint256)',
@@ -36,9 +36,12 @@ export const coilRouterAbi = parseAbi([
   'function incentiveBps() view returns (uint16)',
   'function closeAmount(address user) view returns (uint256)',
   'function feeBps() view returns (uint16)',
-  'function maxDeviationBps() view returns (uint16)',
-  'function quoteMusdForBtc(uint256 btcOut) view returns (uint256)',
-  'function quoteBtcForMusd(uint256 musdOut) view returns (uint256)',
+  // custom errors, so viem names them and the app can explain them
+  'error Busy()', 'error Unauthorized()', 'error NothingToFlash()', 'error DebtTooSmall(uint256 debtAmount, uint256 musdOwed)',
+  'error InsufficientLiquidity()', 'error NoDebt()', 'error CollateralShort(uint256 btcAvailable, uint256 btcOwed)',
+  'error Slippage(uint256 btcOut, uint256 minBtcOut)', 'error PriceDeviation(uint256 paidUsd, uint256 fairUsd)',
+  'error NoGuard()', 'error NoShield()', 'error GuardExpired()', 'error NotTriggered(uint256 price, uint256 triggerPrice)',
+  'error ReserveShort(uint256 available, uint256 needed)', 'error BadParam()', 'error UnexpectedBtc()', 'error TransferFailed()',
 ])
 
 /** Read-only status views (CoilLens). */

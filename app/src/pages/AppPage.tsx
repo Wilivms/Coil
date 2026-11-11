@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAccount, useBalance } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { formatEther, parseEther } from 'viem'
+import { formatEther, isAddress, parseEther } from 'viem'
 import { COIL_ROUTER, explorerAddr, explorerTx, MUSD, ROUTER_V1 } from '../lib/chain'
 import { DEPLOY_TX, useActivity, type ActivityItem } from '../lib/activity'
 import {
@@ -15,19 +15,35 @@ import { fmtBtc, fmtCompact, fmtNum, fmtPct, fmtUsd, shortAddr } from '../lib/fo
 import { useTweened } from '../lib/motion'
 import { useCoilActions, type Step } from '../lib/actions'
 import { DEFAULT_DEVIATION_BPS, poolGap } from '../lib/tolerance'
+import { buyBtcCosts, sellBtcCosts, totalCost, type CostRow } from '../lib/costs'
 import { FlowGraph } from '../components/FlowGraph'
 import { Fan } from '../components/Fan'
 import { Gauge, RadarStrip, ReplayChart, type ReplayWindow } from '../components/Instruments'
 
 const EXAMPLE: MarketState = {
   price: 82_089n * WAD, reserveMusd: 102_589_167n * WAD, reserveBtc: 1_302n * WAD, feeBps: 30n, minNetDebt: 1800n * WAD,
-  interestBps: 100, tcr: 2.95, recoveryMode: false, troves: 247, block: 0n, updatedAt: 0,
+  interestBps: 100, tcr: 2.95, recoveryMode: false, troves: 247, block: 0n, updatedAt: 0, coilFeeBps: 0, incentiveBps: 5,
 }
 
 type Position = { coll: number; debt: number; source: 'live' | 'preview' }
 
+/** `#/app?address=0x…` shows any wallet's position read-only (no wallet needed). */
+function viewAddress(): `0x${string}` | undefined {
+  const q = window.location.hash.split('?')[1] ?? window.location.search.slice(1)
+  const a = new URLSearchParams(q).get('address')
+  return a && isAddress(a) ? (a as `0x${string}`) : undefined
+}
+
 export function AppPage() {
-  const { address } = useAccount()
+  const { address: wallet } = useAccount()
+  const [view, setView] = useState(viewAddress)
+  useEffect(() => {
+    const on = () => setView(viewAddress())
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [])
+  const viewing = !!view && view.toLowerCase() !== wallet?.toLowerCase()
+  const address = view ?? wallet
   const marketQ = useMarket()
   const m = marketQ.data ?? EXAMPLE
   const price = fromWad(m.price)
@@ -40,7 +56,11 @@ export function AppPage() {
   const surplusQ = useSurplus(address)
   const recoilQ = useRecoil(trove ? address : undefined)
   const hist = useBtcHistory()
-  const actions = useCoilActions()
+  const own = useCoilActions()
+  // viewing someone else's trove: no signing on their behalf; firing a due protection stays open to anyone
+  const actions = viewing ? { ...own, ready: false } : own
+  const fire = (kind: 'Guard' | 'Shield' | 'Recoil') => address && own.fire(kind, address)
+  const fireReady = own.ready
 
   const [depositStr, setDepositStr] = useState('0.05')
   const deposit = useMemo(() => {
@@ -79,6 +99,12 @@ export function AppPage() {
       <h1 className="sr-only">Coil app: open, protect and close a leveraged MUSD trove</h1>
       <div className="wrap">
         <MarketBar m={m} live={!!marketQ.data} error={marketQ.isError} />
+        {view && (
+          <p className="note" style={{ marginTop: 16 }}>
+            Read-only view of <a className="mono" href={explorerAddr(view)} target="_blank" rel="noreferrer">{shortAddr(view)} ↗</a>: its trove, protections and history, live from Mezo testnet.
+            {viewing ? ' Signing is off; anyone can still fire a protection that is due.' : ''} <a href="#/app">Back to your wallet</a>
+          </p>
+        )}
         <div className="app__grid" style={{ marginTop: 24 }}>
           <div className="stack">
             {!!surplusQ.data && surplusQ.data > 0n && (
@@ -125,14 +151,14 @@ export function AppPage() {
             {position && <RadarPanel radar={radarQ.data} loading={radarQ.isLoading} cr={cr} self={address} />}
             {position && (
               <GuardPanel m={m} position={position} trigger={triggerV} setTrigger={setTrigger} lo={triggerLo} hi={triggerHi}
-                live={!!trove} guard={guardQ.data} actions={actions} />
+                live={!!trove} guard={guardQ.data} actions={actions} fire={fire} fireReady={fireReady} />
             )}
             {position && (
-              <RecoilPanel m={m} position={position} live={!!trove} recoil={recoilQ.data} actions={actions} />
+              <RecoilPanel m={m} position={position} live={!!trove} recoil={recoilQ.data} actions={actions} fire={fire} fireReady={fireReady} />
             )}
             {position && (
               <ShieldPanel m={m} position={position} live={!!trove} trigger={triggerV} reserve={reserveQ.data}
-                shield={shieldQ.data} actions={actions} />
+                shield={shieldQ.data} actions={actions} fire={fire} fireReady={fireReady} />
             )}
             {position && hist.data && (
               <ReplayPanel closes={hist.data.closes} startDay={hist.data.startDay} stepDays={hist.data.stepDays}
@@ -267,6 +293,9 @@ function BuildPanel({ m, plan, lev, setLev, maxLev, depositStr, setDepositStr, a
           <div className="row"><span>Pool vs MUSD oracle</span><span>{gap >= 0 ? '+' : ''}{fmtPct(gap, 1)}{wide && <span className="faint"> · this trade accepts {fmtPct(Math.min(tradeGap + 0.0075, 0.2), 1)}</span>}</span></div>
           <div className="row"><span>Refunded buffer</span><span>{fmtNum(fromWad(plan.refund), 0)} MUSD</span></div>
         </div>
+        {plan.status !== 'empty' && plan.status !== 'no-liquidity' && (
+          <CostBreakdown rows={buyBtcCosts(m, plan.flashBtc, { borrowed: plan.debtAmount, deposit: plan.deposit, coilFeeBps: m.coilFeeBps, incentiveBps: m.incentiveBps })} />
+        )}
 
         {plan.status === 'below-min-debt' && <p className="note note--danger">MUSD needs at least 1,800 MUSD of debt. Deposit more BTC or raise the leverage.</p>}
         {plan.status === 'tight' && <p className="note note--danger">This would open under 115% after the swap. Coil keeps a 5% cushion over liquidation.</p>}
@@ -291,6 +320,44 @@ function BuildPanel({ m, plan, lev, setLev, maxLev, depositStr, setDepositStr, a
         )}
       </div>
     </section>
+  )
+}
+
+/** What a trade costs against MUSD's oracle, line by line, before you sign. */
+function CostBreakdown({ rows, title = 'Cost against the oracle' }: { rows: CostRow[]; title?: string }) {
+  if (!rows.length) return null
+  const total = totalCost(rows)
+  const f = (v: number) => (Math.abs(v) < 0.005 ? '0' : `${v < 0 ? '−' : ''}${fmtNum(Math.abs(v))}`)
+  return (
+    <details className="costs">
+      <summary>
+        <span>{title}</span>
+        <span>{f(total)} MUSD{total < 0 ? ' in your favour' : ''}</span>
+      </summary>
+      <div className="rows">
+        {rows.map((r) => (
+          <div className="row" key={r.label} title={r.hint}>
+            <span>{r.label}</span><span>{f(r.musd)} MUSD{r.musd < -0.005 ? ' (in your favour)' : ''}</span>
+          </div>
+        ))}
+      </div>
+      <span className="field__hint">Measured against MUSD's PriceFeed. Negative lines work for you. Interest is not included.</span>
+    </details>
+  )
+}
+
+type FireKind = 'Guard' | 'Shield' | 'Recoil'
+
+/** Anyone may do the keeper's job: the contract checks the trigger, and the bounty goes to whoever fires. */
+function FireButton({ kind, due, fire, ready, busy }: { kind: FireKind; due: boolean; fire: (k: FireKind) => void; ready: boolean; busy: string | null }) {
+  if (!due) return null
+  return (
+    <div className="fire">
+      <button className="btn btn--ghost" disabled={!ready || !!busy} onClick={() => fire(kind)}>
+        {busy === `Fire ${kind}` ? 'Working…' : 'Fire it yourself · earn the bounty'}
+      </button>
+      <span className="field__hint">This {kind} is due. The keeper usually fires within a minute, but any wallet may: the contract re-checks the trigger.</span>
+    </div>
   )
 }
 
@@ -349,6 +416,7 @@ function ManagePanel({ m, trove, actions }: {
             <div className="row"><span>BTC sold to the pool</span><span>{fmtBtc(fromWad(withdraw), 4)}</span></div>
             <div className="row row--strong"><span>Ratio after</span><span>{fmtPct(crAfter, 0)}</span></div>
           </div>
+          <CostBreakdown rows={sellBtcCosts(m, repay)} />
           <StepList step={actions.step} active={actions.busy === 'Deleverage'} labels={['Sign the adjustment', 'Send one transaction', 'Mezo confirms']} />
           <button className="btn btn--block" disabled={!!actions.busy || repay === 0n || !actions.ready}
             onClick={() => actions.deleverage(withdraw, repay, collAfter, debtAfter)}>
@@ -363,6 +431,7 @@ function ManagePanel({ m, trove, actions }: {
             <div className="row"><span>BTC sold to the pool</span><span>{fmtBtc(fromWad(close.btcToPool), 4)}</span></div>
             <div className="row row--strong"><span>BTC back to you</span><span>{fmtBtc(fromWad(close.btcOut), 5)}</span></div>
           </div>
+          <CostBreakdown rows={sellBtcCosts(m, close.musdOwed)} />
           <StepList step={actions.step} active={actions.busy === 'Unwind'} labels={['Sign the close', 'Send one transaction', 'Mezo confirms']} />
           <button className="btn btn--block btn--danger" disabled={!!actions.busy || !close.ok || !actions.ready}
             onClick={() => actions.unwind((close.btcOut * 98n) / 100n)}>
@@ -404,6 +473,7 @@ function LeverUp({ m, trove, actions }: {
       ) : (
         <p className="note">{plan.reason}</p>
       )}
+      {plan.ok && <CostBreakdown rows={buyBtcCosts(m, plan.addColl, { borrowed: plan.debtIncrease })} />}
       <span className="field__hint">If MUSD's borrowing capacity is too small, you sign a refinance too; both run in the same transaction.</span>
       <StepList step={actions.step} active={actions.busy === 'Leverage up'} labels={['Sign the adjustment', 'Send one transaction', 'Mezo confirms']} />
       <button className="btn btn--block" disabled={!!actions.busy || !plan.ok || !actions.ready || m.recoveryMode}
@@ -416,12 +486,14 @@ function LeverUp({ m, trove, actions }: {
 
 /* ------------------------------------------------------------------ recoil */
 
-function RecoilPanel({ m, position, live, recoil, actions }: {
+function RecoilPanel({ m, position, live, recoil, actions, fire, fireReady }: {
   m: MarketState
   position: Position
   live: boolean
   recoil?: import('../lib/live').RecoilState
   actions: ReturnType<typeof useCoilActions>
+  fire: (k: FireKind) => void
+  fireReady: boolean
 }) {
   const price = fromWad(m.price)
   const t = { coll: toWad(position.coll), debt: toWad(position.debt) }
@@ -437,6 +509,12 @@ function RecoilPanel({ m, position, live, recoil, actions }: {
   // a keeper buys BTC for you only within the 3% bound; past it, Recoil waits
   const gap = poolGap(m.reserveMusd, m.reserveBtc, m.price)
   const held = gap * 10_000 > DEFAULT_DEVIATION_BPS
+  // "do it now": the same BTC the Recoil adds, sent by you at today's quote (your own tolerance)
+  const nowAdd = armed && recoil!.fresh ? recoil!.addColl : 0n
+  let nowDebt = 0n
+  try { nowDebt = nowAdd > 0n ? (amountIn(nowAdd, m.reserveMusd, m.reserveBtc, m.feeBps) * 1005n) / 1000n : 0n } catch { /* pool too thin */ }
+  const nowCr = nowDebt > 0n ? ((position.coll + fromWad(nowAdd)) * price) / (position.debt + fromWad(nowDebt) * 1.001) : 0
+  const nowCosts = nowDebt > 0n ? buyBtcCosts(m, nowAdd, { borrowed: nowDebt }) : []
   return (
     <section className="panel" aria-labelledby="recoil-h">
       <div className="panel__h">
@@ -468,10 +546,35 @@ function RecoilPanel({ m, position, live, recoil, actions }: {
           <p className="note">{plan.reason}</p>
         )}
         {held && (
-          <p className="note">
-            Right now the pool prices BTC {fmtPct(gap, 1)} above MUSD's oracle, past the 3% bound a keeper is held to. A Recoil stays armed and fires once
-            the pool is back within 3%: nobody can buy BTC that dear on your behalf. To lever up now, use Leverage up, which you send yourself.
-          </p>
+          <div className="note choice">
+            <p style={{ margin: 0 }}>
+              <b>The pool prices BTC {fmtPct(gap, 1)} above MUSD's oracle.</b> A keeper may only buy BTC for you within 3% of the oracle, so a Recoil can't fire
+              right now: nobody can lever you up that dear while you're away. Two choices:
+            </p>
+            <div className="choice__opts">
+              <div>
+                <b>Wait</b>
+                <span>{armed ? 'Your Recoil stays armed' : 'Arm it as usual'} and fires once the pool is back within 3%. Nothing to do.</span>
+              </div>
+              <div>
+                <b>Do it now, yourself</b>
+                {nowDebt > 0n && nowCr >= 1.15 ? (
+                  <>
+                    <span>
+                      Add {fmtBtc(fromWad(nowAdd), 4)} BTC at today's pool price: it costs about {fmtNum(totalCost(nowCosts))} MUSD more than at the oracle
+                      ({fmtPct(gap, 1)} gap, pool fee, impact, MUSD's 0.10% borrowing fee). Ratio after: {fmtPct(nowCr, 0)}. It replaces the armed Recoil.
+                    </span>
+                    <CostBreakdown rows={nowCosts} title="Cost of levering up now" />
+                    <button className="btn" disabled={!live || !!actions.busy || !actions.ready} onClick={() => actions.relever(nowAdd, nowDebt)}>
+                      {actions.busy === 'Leverage up' ? 'Working…' : `Lever up now, accept the ${fmtPct(gap, 1)} gap`}
+                    </button>
+                  </>
+                ) : (
+                  <span>Use Leverage up in your position panel: you send it, you accept the gap, and the cost shows before you sign.</span>
+                )}
+              </div>
+            </div>
+          </div>
         )}
         <p className="field__hint" style={{ margin: 0 }}>
           When BTC rises, or a redemption shrinks your debt, your position loses leverage. Recoil is a signed leverage-up that the keeper runs once your ratio reaches the trigger, with the same price-feed bound as every Coil swap. Redemptions stop being a reason to watch the screen.
@@ -491,6 +594,7 @@ function RecoilPanel({ m, position, live, recoil, actions }: {
             </button>
           )}
         </div>
+        <FireButton kind="Recoil" due={!!armed && !!recoil?.fresh && !!recoil?.triggered && !held} fire={fire} ready={fireReady} busy={actions.busy} />
         {!live && <p className="field__hint" style={{ margin: 0 }}>Open the position first; Recoil manages a live trove.</p>}
       </div>
     </section>
@@ -656,7 +760,7 @@ function RadarPanel({ radar, loading, cr, self }: {
 
 /* ------------------------------------------------------------------ guard */
 
-function GuardPanel({ m, position, trigger, setTrigger, lo, hi, live, guard, actions }: {
+function GuardPanel({ m, position, trigger, setTrigger, lo, hi, live, guard, actions, fire, fireReady }: {
   m: MarketState
   position: Position
   trigger: number
@@ -666,7 +770,16 @@ function GuardPanel({ m, position, trigger, setTrigger, lo, hi, live, guard, act
   live: boolean
   guard?: import('../lib/live').GuardState
   actions: ReturnType<typeof useCoilActions>
+  fire: (k: FireKind) => void
+  fireReady: boolean
 }) {
+  // Guard sells BTC: a keeper may only do it within 3% of the oracle. Past that (pool BTC cheap), it waits.
+  const gapNow = poolGap(m.reserveMusd, m.reserveBtc, m.price)
+  const held = -gapNow * 10_000 > DEFAULT_DEVIATION_BPS
+  const nowRepay = guard?.armed && guard.fresh ? guard.debtRepay : 0n
+  let nowWithdraw = 0n
+  try { nowWithdraw = nowRepay > 0n ? (amountIn(nowRepay, m.reserveBtc, m.reserveMusd, m.feeBps) * 102n) / 100n : 0n } catch { /* too big */ }
+  const nowCosts = nowRepay > 0n ? sellBtcCosts(m, nowRepay) : []
   const [target, setTarget] = useState(1.6)
   const [days, setDays] = useState(30)
   const price = fromWad(m.price)
@@ -683,7 +796,7 @@ function GuardPanel({ m, position, trigger, setTrigger, lo, hi, live, guard, act
         <h2 id="guard-h">Guard · signed stop-loss</h2>
         {armed ? (
           <span className="pill" data-s={guard!.fresh ? (guard!.triggered ? 'danger' : 'ok') : 'watch'}>
-            {guard!.fresh ? (guard!.triggered ? 'Triggered, waiting for a keeper' : `Armed at ${fmtUsd(fromWad(guard!.triggerPrice))}`) : 'Stale, sign again'}
+            {guard!.fresh ? (guard!.triggered ? (held ? 'Triggered, held by the 3% bound' : 'Triggered, waiting for a keeper') : `Armed at ${fmtUsd(fromWad(guard!.triggerPrice))}`) : 'Stale, sign again'}
           </span>
         ) : (
           <span className="pill" data-s="idle">Not armed</span>
@@ -735,6 +848,33 @@ function GuardPanel({ m, position, trigger, setTrigger, lo, hi, live, guard, act
             </button>
           )}
         </div>
+        <FireButton kind="Guard" due={!!armed && !!guard?.fresh && !!guard?.triggered && !held && !guard?.recoveryMode} fire={fire} ready={fireReady} busy={actions.busy} />
+        {held && (
+          <div className="note choice">
+            <p style={{ margin: 0 }}>
+              <b>The pool prices BTC {fmtPct(-gapNow, 1)} under MUSD's oracle.</b> A keeper may only sell your BTC within 3% of the oracle, so a Guard can't fire
+              right now: nobody can sell it that cheap while you're away. Two choices:
+            </p>
+            <div className="choice__opts">
+              <div><b>Wait</b><span>{armed ? 'Your Guard stays armed' : 'Arm it as usual'} and fires once the pool is back within 3% (if the trigger still holds).</span></div>
+              <div>
+                <b>Reduce leverage now, yourself</b>
+                {nowRepay > 0n && nowWithdraw > 0n ? (
+                  <>
+                    <span>Repay {fmtNum(fromWad(nowRepay))} MUSD by selling about {fmtBtc(fromWad(nowWithdraw), 4)} BTC: it costs about {fmtNum(totalCost(nowCosts))} MUSD more than at the oracle. It replaces the armed Guard.</span>
+                    <CostBreakdown rows={nowCosts} title="Cost of reducing now" />
+                    <button className="btn" disabled={!live || !!actions.busy || !actions.ready}
+                      onClick={() => actions.deleverage(nowWithdraw, nowRepay, toWad(position.coll) - nowWithdraw, toWad(position.debt) - nowRepay)}>
+                      {actions.busy === 'Deleverage' ? 'Working…' : `Deleverage now, accept the ${fmtPct(-gapNow, 1)} gap`}
+                    </button>
+                  </>
+                ) : (
+                  <span>Use Reduce leverage in your position panel: you send it, you accept the gap, and the cost shows before you sign.</span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         {(guard?.recoveryMode || m.recoveryMode) && (
           <p className="note note--danger">MUSD is in Recovery Mode: collateral can't leave a trove, so a Guard can't fire. A Shield, which only repays debt from your Reserve, still can.</p>
         )}
@@ -746,7 +886,7 @@ function GuardPanel({ m, position, trigger, setTrigger, lo, hi, live, guard, act
 
 /* ------------------------------------------------------------------ reserve and shield */
 
-function ShieldPanel({ m, position, live, trigger, reserve, shield, actions }: {
+function ShieldPanel({ m, position, live, trigger, reserve, shield, actions, fire, fireReady }: {
   m: MarketState
   position: Position
   live: boolean
@@ -754,6 +894,8 @@ function ShieldPanel({ m, position, live, trigger, reserve, shield, actions }: {
   reserve?: import('../lib/live').ReserveState
   shield?: import('../lib/live').ShieldState
   actions: ReturnType<typeof useCoilActions>
+  fire: (k: FireKind) => void
+  fireReady: boolean
 }) {
   const [amountStr, setAmountStr] = useState('')
   const [share, setShare] = useState(0.25)
@@ -856,6 +998,7 @@ function ShieldPanel({ m, position, live, trigger, reserve, shield, actions }: {
             </button>
           )}
         </div>
+        <FireButton kind="Shield" due={!!armed && !!shield?.fresh && !!shield?.funded && (!!shield?.byPrice || !!shield?.byQueue)} fire={fire} ready={fireReady} busy={actions.busy} />
         {!live && <p className="field__hint" style={{ margin: 0 }}>Open the position first; a Shield protects a live trove.</p>}
       </div>
     </section>

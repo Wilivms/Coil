@@ -495,3 +495,23 @@ tr.sel td { background: var(--accent-soft); }
 /* a 350-trove queue needs every pixel on a phone */
 @media (max-width: 640px) { .radar__strip { gap: 0; } }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* cost against the oracle, collapsed by default */
+.costs { border: 1px solid var(--rule); border-radius: 10px; padding: 10px 14px; }
+.costs > summary { display: flex; justify-content: space-between; gap: 12px; cursor: pointer; font-size: 13px; list-style: none; }
+.costs > summary::-webkit-details-marker { display: none; }
+.costs > summary::before { content: '▸'; margin-right: 6px; color: var(--ink-3); transition: transform .15s; display: inline-block; }
+.costs[open] > summary::before { transform: rotate(90deg); }
+.costs > summary span:first-child { flex: 1; }
+.costs .rows { margin-top: 10px; }
+.costs .field__hint { display: block; margin-top: 8px; }
+@media (prefers-reduced-motion: reduce) { .costs > summary::before { transition: none; } }
+
+/* wait or act, when the pool sits past the keeper bound */
+.choice { display: flex; flex-direction: column; gap: 12px; }
+.choice__opts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.choice__opts > div { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
+.choice__opts span { font-size: 13px; line-height: 1.5; }
+@media (max-width: 640px) { .choice__opts { grid-template-columns: 1fr; } }
+
+.fire { display: flex; flex-direction: column; gap: 6px; }

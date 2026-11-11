@@ -20,6 +20,9 @@ export type MarketState = Market & {
   troves: number
   block: bigint
   updatedAt: number
+  /** CoilRouter settings, read live (both change only through the 24 h timelock) */
+  coilFeeBps: number
+  incentiveBps: number
 }
 
 export async function fetchMarket(): Promise<MarketState> {
@@ -32,9 +35,11 @@ export async function fetchMarket(): Promise<MarketState> {
     client.readContract({ address: ADDR.troveManager, abi: troveManagerAbi, functionName: 'getTroveOwnersCount' }),
     client.getBlockNumber(),
   ])
-  const [tcr, recoveryMode] = await Promise.all([
+  const [tcr, recoveryMode, coilFeeBps, incentiveBps] = await Promise.all([
     client.readContract({ address: ADDR.troveManager, abi: troveManagerAbi, functionName: 'getTCR', args: [price] }),
     client.readContract({ address: ADDR.troveManager, abi: troveManagerAbi, functionName: 'checkRecoveryMode', args: [price] }),
+    COIL_ROUTER ? client.readContract({ address: COIL_ROUTER, abi: coilRouterAbi, functionName: 'feeBps' }) : Promise.resolve(0),
+    COIL_ROUTER ? client.readContract({ address: COIL_ROUTER, abi: coilRouterAbi, functionName: 'incentiveBps' }) : Promise.resolve(0),
   ])
   return {
     price,
@@ -44,6 +49,8 @@ export async function fetchMarket(): Promise<MarketState> {
     minNetDebt,
     interestBps: Number(rate),
     tcr: Number(tcr) / 1e18,
+    coilFeeBps: Number(coilFeeBps),
+    incentiveBps: Number(incentiveBps),
     recoveryMode,
     troves: Number(troves),
     block,

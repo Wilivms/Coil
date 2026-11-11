@@ -281,6 +281,30 @@ export function useCoilActions() {
         })
       }, 'Leftover BTC claimed'),
 
+    /** Anyone may fire a triggered protection and take its bounty; the contract checks the trigger itself. */
+    fire: (kind: 'Guard' | 'Shield' | 'Recoil', owner: Address) =>
+      run(`Fire ${kind}`, async (user) => {
+        setStep('send')
+        // where the trove lands in SortedTroves after the fire, so MUSD doesn't walk the whole list
+        const dc = await client.readContract({ address: ADDR.troveManager, abi: troveManagerAbi, functionName: 'getEntireDebtAndColl', args: [owner] })
+        let [coll, debt] = [dc[0], dc[1]]
+        if (kind === 'Shield') {
+          const o = await client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'shieldOf', args: [owner] })
+          debt -= o.repayAmount < debt ? o.repayAmount : 0n
+        } else if (kind === 'Guard') {
+          const o = await client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'guardOf', args: [owner] })
+          coll -= o.collWithdrawal; debt -= o.debtRepay < debt ? o.debtRepay : 0n
+        } else {
+          const o = await client.readContract({ address: COIL_ROUTER!, abi: coilRouterAbi, functionName: 'recoilOf', args: [owner] })
+          coll += o.addColl; debt += (o.debtIncrease * 1001n) / 1000n
+        }
+        const [upper, lower] = await insertHints(coll, debt)
+        const common = { account: user, chain: mezoTestnet, address: COIL_ROUTER!, abi: coilRouterAbi } as const
+        if (kind === 'Shield') return wallet!.writeContract({ ...common, functionName: 'fireShield', args: [owner, upper, lower, 200n] })
+        if (kind === 'Guard') return wallet!.writeContract({ ...common, functionName: 'fireGuard', args: [owner, upper, lower] })
+        return wallet!.writeContract({ ...common, functionName: 'fireRecoil', args: [owner, upper, lower] })
+      }, 'Fired, the bounty is yours'),
+
     disarmGuard: () =>
       run('Disarm Guard', async (user) => {
         setStep('send')

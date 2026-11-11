@@ -14,7 +14,7 @@ gsap.registerPlugin(Observer)
 
 const EXAMPLE: MarketState = {
   price: 82_089n * WAD, reserveMusd: 102_589_167n * WAD, reserveBtc: 1_302n * WAD, feeBps: 4n, minNetDebt: 1800n * WAD,
-  interestBps: 100, tcr: 2.95, recoveryMode: false, troves: 247, block: 16_188_308n, updatedAt: 0,
+  interestBps: 100, tcr: 2.95, recoveryMode: false, troves: 247, block: 16_188_308n, updatedAt: 0, coilFeeBps: 0, incentiveBps: 5,
 }
 
 /**
