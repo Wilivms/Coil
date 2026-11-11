@@ -149,3 +149,32 @@ Its first operation turns on the 0.10% opening fee:
 
 After: `feeBps()` reads 10. Operation id `0x853f7cf9…c900`.
 
+## Fee live: full E2E after the timelock (12 Nov 2026, 00:41 Paris)
+
+Third team wallet `0xb9c2…E9cc`, `keeper/e2e.mjs`, deposit 0.025 BTC at 3x, CoilRouter v4 with `feeBps = 10`.
+
+**The fee:** the coil tx sent 0.025 BTC; the treasury `0xcFe7…b368` balance rose by exactly **0.000025 BTC (0.10%)** in that block
+(16723129, read with `getBalance` at block − 1 and block). The fee is paid in BTC, so it shows as a balance change, not a log.
+
+| Step | Tx |
+|---|---|
+| coil | [`0x5659ce58…`](https://explorer.test.mezo.org/tx/0x5659ce5811aea4c08c46a3aa0188a3449c9c6ca65fa59c16bf5126209852f03e) |
+| approve MUSD | [`0x62262b2d…`](https://explorer.test.mezo.org/tx/0x62262b2dd4575f13b753a4ec5db2512dbf25b39901f2f6b9185b4ab3d8536ae6) |
+| depositReserve | [`0xaf2131ac…`](https://explorer.test.mezo.org/tx/0xaf2131ac5a804dc0539641021f9ba79374ebc42ebd9b16badb5e444119172f14) |
+| armShield | [`0xe160fc60…`](https://explorer.test.mezo.org/tx/0xe160fc60b53269c584b3bef4d1b7de927f5e23c6ad36759c4d53e5c0f9ea3b86) |
+| fireShield | [`0x6d9e5264…`](https://explorer.test.mezo.org/tx/0x6d9e526448bd435ed89262da55d09bf00020b8ce3d1f5525e6e694ed43315251) |
+| relever | [`0x7348a9a4…`](https://explorer.test.mezo.org/tx/0x7348a9a49dbd9141b15030962f4f426e0d87ce667792dfc2194b3469cb52d2b7) |
+| armRecoil | [`0x35900629…`](https://explorer.test.mezo.org/tx/0x35900629b36441034d3d6bd8d1e2856c8bc3a2d3801efd6d5fd4df88b7c602ea) |
+| fireRecoil refused (PriceDeviation) | refused on-chain, by design |
+| disarmRecoil | [`0x3796b734…`](https://explorer.test.mezo.org/tx/0x3796b734bf8b1f36a5527b6dc38bb6949eb6b0e503f94c4fc93402e48a805691) |
+| armGuard | [`0xfef8843d…`](https://explorer.test.mezo.org/tx/0xfef8843dd24987d98a6eecfff0e108cb607cd0e45532bd4d3441e1e9c10c6911) |
+| fireGuard | [`0x93bde60a…`](https://explorer.test.mezo.org/tx/0x93bde60a751f5f5b0256ecd802aa5b44d2f8e30f6161db6c12012909aa37da71) |
+| deleverage | [`0x568a47ff…`](https://explorer.test.mezo.org/tx/0x568a47ff235050d7cf00d717bde1f2698b255720bddfd67fe01d4514c87c5ec4) |
+| pushIncentives | [`0x05da8dad…`](https://explorer.test.mezo.org/tx/0x05da8dad112e4259784ec44a23df1d9c958a687dfb92d8ebb2ca73fba4f1383e) |
+| withdrawReserve | [`0x252c4a18…`](https://explorer.test.mezo.org/tx/0x252c4a18ba6151c359e9ec30b3f9d83f8d463bcd4e79a71b091758c61727ca5b) |
+| unwind | [`0x36b1c6f3…`](https://explorer.test.mezo.org/tx/0x36b1c6f33816f2d388e8055cc40091d60e6cf50d1ca7ce4723f64224bceba6cc) |
+
+Shield and Guard were fired by the script after its 60 s wait: the always-on keeper's chain had stopped on a GitHub
+`startup_failure` at 20:22 UTC and the 5-minute schedule had not restarted it. It was restarted by hand at 23:45 UTC.
+Wallet: 0.0500 → 0.0475 BTC, 189 MUSD left (fees, pool gap and gas across 14 transactions).
+
