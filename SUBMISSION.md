@@ -49,7 +49,7 @@ NEW IN WAVE 2
 - Owner behind a 24 h OpenZeppelin timelock; its first proposal (the 0.10% fee) is public on-chain.
 - Also fixed: pending redistribution double count, leftover BTC claim, a gas estimate ~140x too low.
 
-TESTS: the app clicked through on testnet (docs/e2e-testnet.md); 27 app tests; 107 unit/fuzz/invariant (97% line coverage) + 9 fork tests on the real Mezo contracts, testnet and mainnet: Shield repays a real mainnet trove from mainnet sMUSD. Slither triaged; CI on every push.
+TESTS: the app clicked through on testnet (docs/e2e-testnet.md); 28 app tests; 107 unit/fuzz/invariant (97% line coverage) + 9 fork tests on the real Mezo contracts, testnet and mainnet: Shield repays a real mainnet trove from mainnet sMUSD. Slither triaged; CI on every push.
 
 WHY NOT MAINNET: the mainnet MUSD/BTC pool holds 0.48 BTC; a 0.05 BTC flash pays ~12% over fair. The mainnet fork test shows Coil refuses it. Reserve and Shield need no pool and already pass on a mainnet fork.
 
