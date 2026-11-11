@@ -57,7 +57,7 @@ export function Landing() {
           </p>
           <div className="cta-row">
             <a className="btn magnetic" href="#/app">Open the app <Arrow /></a>
-            <a className="btn btn--ghost" href="#/pitch">Watch the pitch</a>
+            <a className="btn btn--ghost" href="https://youtu.be/ld7dE8nHTlI" target="_blank" rel="noreferrer">Watch the demo (1:42)</a>
           </div>
         </div>
         <Rings layers={[1, ...(plan.flashBtc > 0n ? splitLayers(fromWad(plan.flashBtc)) : [])]}>

@@ -15,7 +15,7 @@ Wave 1 submission (19 Oct 2026): https://app.akindo.io/communities/kzmodr4eacd1Z
 - **Proof (every transaction):** https://coil-mezo-blitz-bet.vercel.app/#/proof
 - **Code:** https://github.com/Wilivms/Coil (commit judged: the latest on `main`; Wave 2 starts at 02f7583)
 - **Deck (PDF in the repo):** https://github.com/Wilivms/Coil/blob/main/docs/Coil-deck.pdf
-- **Video:** [to add, under 2:00]
+- **Video (1:42):** https://youtu.be/ld7dE8nHTlI
 - **Contracts:** CoilRouter v4 `0x17e056ef7e076Fbcb806dF9916552A26Da527F03`, CoilLens `0xa82154DD7bf08840F4D9d97a44999C4D4F76d8f5` (both verified); v3 `0x7b3D…6Ac4` holds the full keeper E2E; v2 `0xa9ad…7a92` holds the first keeper-fired Guard
 
 ## TL;DR
@@ -26,7 +26,8 @@ Coil opens a leveraged MUSD trove in one transaction, in the user's own name, th
 ## Updates in this Wave (paste into "Updates in this Wave", 3,000 characters max)
 
 LINKS
-App: https://coil-mezo-blitz-bet.vercel.app/#/app · Try: /#/try · Proof (every tx): /#/proof
+Video (1:42): https://youtu.be/ld7dE8nHTlI
+App: https://coil-mezo-blitz-bet.vercel.app/#/app · Try: /#/try · Proof: /#/proof
 Code: https://github.com/Wilivms/Coil · Deck: docs/Coil-deck.pdf · E2E: docs/e2e-testnet.md
 CoilRouter v4 0x17e056ef7e076Fbcb806dF9916552A26Da527F03 + CoilLens 0xa821…d8f5, source-verified
 
@@ -46,7 +47,7 @@ NEW IN WAVE 2
 - v4, found by our own E2E: the testnet pool drifted 5.5% from the oracle, past our 5% cap, and every coil reverted. Now the borrower may accept a wider gap (max 20%) on a trade they send; the app sets it from the live quote and shows it. Keeper flows stay on 3%: on-chain, fireRecoil was refused at that gap.
 - App: cost vs the oracle (MUSD) before each signature; wait-or-act when the pool is past the keeper bound; fire-it-yourself; read-only ?address= view; live keeper health and mainnet queue on /proof.
 - Owner behind a 24 h OpenZeppelin timelock; its first proposal (the 0.10% fee) is public on-chain.
-- Also fixed: pending redistribution double count, claim of leftover BTC, an RPC gas estimate ~140x too low (fires now use hints).
+- Also fixed: pending redistribution double count, leftover BTC claim, a gas estimate ~140x too low.
 
 TESTS: the app clicked through on testnet (docs/e2e-testnet.md); 27 app tests; 107 unit/fuzz/invariant (97% line coverage) + 9 fork tests on the real Mezo contracts, testnet and mainnet: Shield repays a real mainnet trove from mainnet sMUSD. Slither triaged; CI on every push.
 
@@ -82,6 +83,8 @@ Wiliams Lopes: solo builder, Head of Events at De Vinci Blockchain, ESILV Paris.
 
 ## Video script (under 2:00)
 
+Final cut, 1:42: https://youtu.be/ld7dE8nHTlI. The script below was the plan; the cut adds Recoil (wait or act) and the bot redemption on testnet.
+
 (0:00–0:12, slide "The problem") On Mezo mainnet, 1,279 positions were hit by redemptions and only 28 by liquidations. Leveraged troves are first in line. Coil is leverage built for that.
 
 (0:12–0:20, the app, wallet connected) This is Coil on Mezo testnet. I open 0.02 BTC at 3x.
@@ -107,4 +110,5 @@ Coil, Wave 2 update 🧡 Leverage on Mezo that survives redemptions.
 - New: Reserve (MUSD in sMUSD) and Shield, a signed repay that fires when your trove nears the front of the redemption queue. It works in Recovery Mode.
 - Guard and Shield work on ANY MUSD trove, even one opened in the Mezo app. An always-on keeper fires them within about 15 s.
 Try it in 2 minutes: https://coil-mezo-blitz-bet.vercel.app/#/try
+Demo (1:42): https://youtu.be/ld7dE8nHTlI
 Feedback welcome, especially on the redemption-queue trigger.
