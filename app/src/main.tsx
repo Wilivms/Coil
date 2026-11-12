@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { WagmiProvider, createConfig, http } from 'wagmi'
+import { useTheme } from './lib/theme'
 import { RainbowKitProvider, connectorsForWallets, lightTheme, darkTheme } from '@rainbow-me/rainbowkit'
 import {
   injectedWallet, metaMaskWallet, rabbyWallet, okxWallet, coinbaseWallet, walletConnectWallet,
@@ -36,17 +37,25 @@ const wagmiConfig = createConfig({
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } })
 
 const base = { accentColor: '#F7931A', accentColorForeground: '#141414', borderRadius: 'small' as const, fontStack: 'system' as const }
-const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+
+function Wallets({ children }: { children: React.ReactNode }) {
+  const theme = useTheme()
+  return (
+    <RainbowKitProvider initialChain={mezoTestnet} theme={theme === 'dark' ? darkTheme(base) : lightTheme(base)} modalSize="compact">
+      {children}
+    </RainbowKitProvider>
+  )
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider initialChain={mezoTestnet} theme={dark ? darkTheme(base) : lightTheme(base)} modalSize="compact">
+        <Wallets>
           <ToastProvider>
             <App />
           </ToastProvider>
-        </RainbowKitProvider>
+        </Wallets>
       </QueryClientProvider>
     </WagmiProvider>
   </React.StrictMode>,
