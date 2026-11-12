@@ -71,9 +71,9 @@ Solidity 0.8.24, Foundry (unit, fuzz, invariant and fork tests), EIP-712, Mezo P
 
 ## Future milestones
 
-1. Dec 2026: re-coil a trove back to its target leverage after a redemption; Shield ladders.
-2. Q1 2027: external audit, fee routed to the BTC/MUSD gauge.
-3. 2027: mainnet once the BTC/MUSD pool can take positions without double-digit impact.
+1. Dec 2026: Shield ladders (several signed repays at stepped triggers) and Mezo Passport accounts.
+2. Q1 2027: external audit; a second, independent keeper next to the GitHub Actions one.
+3. 2027: Reserve and Shield on mainnet first (they need no pool, and pass on a mainnet fork today), then leverage once the MUSD/BTC pool can take positions without double-digit impact.
 
 ## Team
 
