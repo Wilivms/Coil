@@ -206,3 +206,14 @@ Wallet: 0.0500 → 0.0475 BTC, 189 MUSD left (fees, pool gap and gas across 14 t
 | Deleverage (by the user) | [`0xb70d622e…`](https://explorer.test.mezo.org/tx/0xb70d622eb478322dd1dfc10683772fe5d47eeeeb08fced8fc9b9a3d787d293fb) |
 | Unwind | [`0xc5e93a1b…`](https://explorer.test.mezo.org/tx/0xc5e93a1bb0fdd72739fd2ba07d2cbfba2c9245ad838a4cb25e09b7d414f4f612) |
 
+### Third outside wallet (10:41 Paris)
+
+`0x056053003138F87A3ad010B5e79429baCC0070E2`, not a team wallet:
+
+| Step | Tx |
+|---|---|
+| Coil | [`0x852b1570…`](https://explorer.test.mezo.org/tx/0x852b1570b71e086211929f9fa3396f5302da983db1465f2909b5b253f9f6a77b) |
+| Arm Guard | [`0x7240567c…`](https://explorer.test.mezo.org/tx/0x7240567c2365a9ad8b54cee76c3c1fd7122486b3b2ce2a58011cae8cd2de1a27) |
+| Reserve deposit | [`0x6792bd36…`](https://explorer.test.mezo.org/tx/0x6792bd36329bc4697f15f9d6d1c2a957e0ffc90451dff4b9398807509ce6f203) |
+| Arm Shield | [`0x7e55c953…`](https://explorer.test.mezo.org/tx/0x7e55c95374f5e887ff70cbd17798b8eca7d7e4fb3a91b8b3d651bdd97bbc35a4) |
+| Deleverage (by the user) | [`0x0c859e31…`](https://explorer.test.mezo.org/tx/0x0c859e3168e7755ad51eb1ef005ee7facdd8341b27bdc78b3c44a4420398e9dc) |
