@@ -178,7 +178,9 @@ Shield and Guard were fired by the script after its 60 s wait: the always-on kee
 `startup_failure` at 20:22 UTC and the 5-minute schedule had not restarted it. It was restarted by hand at 23:45 UTC.
 Wallet: 0.0500 → 0.0475 BTC, 189 MUSD left (fees, pool gap and gas across 14 transactions).
 
-## First outside wallet (12 Nov 2026, 02:04 Paris)
+## Outside wallets (12 Nov 2026)
+
+### First outside wallet (02:04 Paris)
 
 `0xA6108e8c84da72313E27C7Ab542D3d2e48fCD22e`, not a team wallet, used the live app through `#/try`:
 
@@ -190,4 +192,17 @@ Wallet: 0.0500 → 0.0475 BTC, 189 MUSD left (fees, pool gap and gas across 14 t
 | Reserve deposit | [`0x2a9ea4cf…`](https://explorer.test.mezo.org/tx/0x2a9ea4cf621bf7414e96bb4fc2ca9da93b662fafbfbb19afc598d9e162fe502a) |
 | Arm Recoil | [`0x262faee6…`](https://explorer.test.mezo.org/tx/0x262faee622a6ee2be130e8a42ffdbab752cfba64742c0ee57a38dd26c565d396) |
 | Unwind | [`0x53f994b6…`](https://explorer.test.mezo.org/tx/0x53f994b63be0addeaf44869a0226c2ba8f53a1bf2767cce69184fe119613a297) |
+
+### Second outside wallet (02:14 Paris)
+
+`0xdd7449a2C4112B9f325d164886Dfd992CC508E9c`, not a team wallet:
+
+| Step | Tx |
+|---|---|
+| Coil | [`0x071b2e3a…`](https://explorer.test.mezo.org/tx/0x071b2e3a751c710c0b174369754d3590b8e7e7602abac4760171b4c0462395df) |
+| Arm Guard | [`0x48747797…`](https://explorer.test.mezo.org/tx/0x48747797fab68ddd3c5007da29b11e6f3713855b49bbf4c45860d0125af359bf) |
+| Reserve deposit | [`0xd2b7b214…`](https://explorer.test.mezo.org/tx/0xd2b7b21420634720bebb5e0f255e153048cad801e20b9050f1ec3dcb74ebe980) |
+| Arm Shield | [`0xb4ade53b…`](https://explorer.test.mezo.org/tx/0xb4ade53b00df069e229484089ad3a78099deab4b5e70315b04739edefae8fa2c) |
+| Deleverage (by the user) | [`0xb70d622e…`](https://explorer.test.mezo.org/tx/0xb70d622eb478322dd1dfc10683772fe5d47eeeeb08fced8fc9b9a3d787d293fb) |
+| Unwind | [`0xc5e93a1b…`](https://explorer.test.mezo.org/tx/0xc5e93a1bb0fdd72739fd2ba07d2cbfba2c9245ad838a4cb25e09b7d414f4f612) |
 
