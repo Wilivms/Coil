@@ -37,12 +37,12 @@ WAVE 1 FEEDBACK
 1. Keeper sandwich (High): fixed. Every swap is bounded by MUSD's PriceFeed and Guard stores a signed minBtcOut; the sandwich replay test reverts.
 2. Recovery Mode: Shield, a signed RepayMUSD funded by a Reserve in Mezo's sMUSD (earns yield). Repay-only, so it works when Guard can't.
 3. Keeper end to end: always-on GitHub Actions keeper (15 s). On v3 and v4 it fired Shields, a Recoil and Guards on its own.
-4. Outside wallets: Guard/Shield now work on any MUSD trove; /try onboarding. Honest count on /proof.
+4. Outside wallets: a first outside user (0xA610…D22e) ran coil, Guard fired by our keeper, Reserve, Recoil, unwind. Count on /proof.
 5. Verify, video, no forced intro: done.
 
 NEW IN WAVE 2
 - Shield redemption trigger: fires when less than X MUSD stands ahead of the trove, proved on-chain by walking SortedTroves.
-- Leverage up in one tx (adds a Refinance signature when MUSD's capacity is short) and Recoil, a signed leverage-up the keeper runs once the ratio is back.
+- Leverage up in one tx and Recoil, a signed leverage-up the keeper runs once the ratio is back.
 - 0.05% of each coil's debt to the MUSD/BTC gauge, live.
 - v4, found by our own E2E: the testnet pool drifted 5.5% from the oracle, past our 5% cap, and every coil reverted. Now the borrower may accept a wider gap (max 20%) on a trade they send; the app sets it from the live quote and shows it. Keeper flows stay on 3%: on-chain, fireRecoil was refused at that gap.
 - App: cost vs the oracle (MUSD) before each signature; wait-or-act when the pool is past the keeper bound; fire-it-yourself; read-only ?address= view; live keeper health and mainnet queue on /proof.
