@@ -35,6 +35,7 @@ export const TEAM_WALLETS: Record<string, string> = {
   '0x09b657b9e093a7c13945adb2b1b5397d0e82e2a1': 'keeper (GitHub Actions)',
   '0x2f8d64b18750ad18169027382ccf19b6dae5ea94': 'test wallet A: edge cases (queue Shield, redemption claim, v2 Reserve)',
   '0xb9c267ac2460611ee0b4ee061383422b808be9cc': 'ops 2: executed the timelock, fee E2E',
+  '0x0de810e47794cf9902aa8a94edaca4738e0fba9b': 'founder (AKINDO wallet)',
 }
 export const isTeam = (a: string) => a.toLowerCase() in TEAM_WALLETS
 
