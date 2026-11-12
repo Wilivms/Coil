@@ -13,11 +13,16 @@
   --accent: #f7931a;
   --accent-ink: #a35400;
   --accent-soft: rgba(247, 147, 26, 0.14);
-  --board: #0c0c0e;
-  --board-2: #17171a;
-  --board-rule: #2a2a2f;
-  --board-ink: #ededea;
-  --board-ink-2: #8f8f98;
+  --board: #fbfaf6;
+  --board-2: #ffffff;
+  --board-rule: #dedcd5;
+  --board-ink: #111113;
+  --board-ink-2: #62626b;
+  --board-dot: rgba(17, 17, 19, 0.08);
+  --board-wire: rgba(17, 17, 19, 0.18);
+  --board-path: 17, 17, 19;
+  --board-red: 196, 53, 42;
+  --node-shadow: 0 1px 2px rgba(17, 17, 19, 0.05), 0 6px 16px -10px rgba(17, 17, 19, 0.18);
   --ok: #1f7a4a;
   --warn: #a87300;
   --danger: #c4352a;
@@ -47,6 +52,13 @@
     --board: #080809;
     --board-2: #121214;
     --board-rule: #26262b;
+    --board-ink: #ededea;
+    --board-ink-2: #8f8f98;
+    --board-dot: rgba(255, 255, 255, 0.06);
+    --board-wire: rgba(255, 255, 255, 0.12);
+    --board-path: 237, 237, 234;
+    --board-red: 255, 106, 92;
+    --node-shadow: 0 20px 40px -24px rgba(0, 0, 0, 0.8);
     --ok: #4cc38a;
     --warn: #e6b13a;
     --danger: #ff6a5c;
@@ -69,6 +81,13 @@
   --board: #080809;
   --board-2: #121214;
   --board-rule: #26262b;
+  --board-ink: #ededea;
+  --board-ink-2: #8f8f98;
+  --board-dot: rgba(255, 255, 255, 0.06);
+  --board-wire: rgba(255, 255, 255, 0.12);
+  --board-path: 237, 237, 234;
+  --board-red: 255, 106, 92;
+  --node-shadow: 0 20px 40px -24px rgba(0, 0, 0, 0.8);
   --ok: #4cc38a;
   --warn: #e6b13a;
   --danger: #ff6a5c;
@@ -200,7 +219,7 @@ img, canvas, svg { max-width: 100%; }
 .board {
   background: var(--board); color: var(--board-ink); border-radius: 6px; position: relative; overflow: hidden;
   border: 1px solid var(--board-rule);
-  background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.06) 1px, transparent 0);
+  background-image: radial-gradient(circle at 1px 1px, var(--board-dot) 1px, transparent 0);
   background-size: 22px 22px;
 }
 .board .mono { color: var(--board-ink-2); }
@@ -218,7 +237,7 @@ img, canvas, svg { max-width: 100%; }
 .node {
   background: var(--board-2); border: 1px solid var(--board-rule); border-radius: 8px; padding: 14px; display: flex;
   flex-direction: column; gap: 10px; min-width: 0; position: relative; z-index: 1;
-  box-shadow: 0 20px 40px -24px rgba(0,0,0,0.8);
+  box-shadow: var(--node-shadow);
 }
 .node__head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .node__head .mono { font-size: 10px; }

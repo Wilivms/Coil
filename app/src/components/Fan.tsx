@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { simulate } from '../lib/risk'
 import { reducedMotion } from '../lib/motion'
+import { useTheme } from '../lib/theme'
 import { fmtCompact, fmtPct } from '../lib/format'
 
 /**
@@ -16,6 +17,7 @@ export function Fan({ s0, sigma, days, liq, trigger, seed = 11 }: {
   seed?: number
 }) {
   const cv = useRef<HTMLCanvasElement>(null)
+  const theme = useTheme()
   const sim = useMemo(() => simulate(s0, sigma, days, 220, liq, seed), [s0, sigma, days, liq, seed])
   const share = useMemo(() => sim.breached.reduce((a, b) => a + b, 0) / sim.breached.length, [sim])
   const guardShare = useMemo(() => {
@@ -28,6 +30,11 @@ export function Fan({ s0, sigma, days, liq, trigger, seed = 11 }: {
   useEffect(() => {
     const el = cv.current!
     const ctx = el.getContext('2d')!
+    // colours come from the theme tokens: ink paths on paper in light mode, light paths on the board in dark mode
+    const css = getComputedStyle(document.documentElement)
+    const ink = css.getPropertyValue('--board-path').trim() || '237, 237, 234'
+    const red = css.getPropertyValue('--board-red').trim() || '255, 106, 92'
+    const a = (rgb: string, al: number) => `rgba(${rgb},${al})`
     const dpr = Math.min(2, window.devicePixelRatio || 1)
     let raf = 0
     let progress = reducedMotion() ? 1 : 0
@@ -52,8 +59,8 @@ export function Fan({ s0, sigma, days, liq, trigger, seed = 11 }: {
       const Y = (v: number) => padT + (1 - (Math.log(v) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))) * (h - padT - padB)
 
       ctx.font = '10px "Martian Mono Variable", "Martian Mono", monospace'
-      ctx.fillStyle = 'rgba(237,237,234,0.45)'
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+      ctx.fillStyle = a(ink, 0.55)
+      ctx.strokeStyle = a(ink, 0.07)
       ctx.lineWidth = 1
       for (let i = 0; i <= 4; i++) {
         const v = Math.exp(Math.log(lo) + ((Math.log(hi) - Math.log(lo)) * i) / 4)
@@ -70,17 +77,17 @@ export function Fan({ s0, sigma, days, liq, trigger, seed = 11 }: {
         const p = sim.paths[i]
         const bd = sim.breachDay[i]
         ctx.lineWidth = 1
-        ctx.strokeStyle = 'rgba(237,237,234,0.14)'
+        ctx.strokeStyle = a(ink, theme === 'dark' ? 0.14 : 0.07)
         ctx.beginPath()
         const end = bd >= 0 ? bd : days
         for (let d = 0; d <= end; d++) (d ? ctx.lineTo : ctx.moveTo).call(ctx, X(d), Y(p[d]))
         ctx.stroke()
         if (bd >= 0) {
-          ctx.strokeStyle = 'rgba(255,106,92,0.55)'
+          ctx.strokeStyle = a(red, 0.55)
           ctx.beginPath()
           for (let d = bd; d <= days; d++) (d === bd ? ctx.moveTo : ctx.lineTo).call(ctx, X(d), Y(p[d]))
           ctx.stroke()
-          ctx.fillStyle = '#FF6A5C'
+          ctx.fillStyle = a(red, 1)
           ctx.beginPath(); ctx.arc(X(bd), Y(p[bd]), 2, 0, Math.PI * 2); ctx.fill()
         }
       }
@@ -95,9 +102,9 @@ export function Fan({ s0, sigma, days, liq, trigger, seed = 11 }: {
         ctx.textAlign = 'left'
         ctx.fillText(label, padL + 6, Y(v) - 6)
       }
-      hline(s0, 'rgba(237,237,234,0.8)', 'today $' + fmtCompact(s0), [])
-      if (trigger) hline(trigger, '#F7931A', 'guard $' + fmtCompact(trigger), [6, 4])
-      hline(liq, '#FF6A5C', 'liquidation $' + fmtCompact(liq), [3, 3])
+      hline(s0, a(ink, 0.8), 'today $' + fmtCompact(s0), [])
+      if (trigger) hline(trigger, theme === 'dark' ? '#F7931A' : '#c46a00', 'guard $' + fmtCompact(trigger), [6, 4])
+      hline(liq, a(red, 1), 'liquidation $' + fmtCompact(liq), [3, 3])
     }
 
     const tick = (t: number) => {
@@ -111,14 +118,14 @@ export function Fan({ s0, sigma, days, liq, trigger, seed = 11 }: {
     if (progress < 1) raf = requestAnimationFrame(tick)
     else draw()
     return () => { cancelAnimationFrame(raf); ro.disconnect() }
-  }, [sim, s0, liq, trigger, days])
+  }, [sim, s0, liq, trigger, days, theme])
 
   return (
     <div className="fan">
       <canvas ref={cv} role="img" aria-label={`${sim.paths.length} simulated BTC price paths over ${days} days; ${fmtPct(share)} reach the liquidation price`} />
       <div className="fan__legend mono">
-        <span><i style={{ background: 'rgba(237,237,234,0.5)' }} />Path survives</span>
-        <span><i style={{ background: '#FF6A5C' }} />Hits liquidation · {fmtPct(share, 0)}</span>
+        <span><i style={{ background: 'rgba(var(--board-path),0.5)' }} />Path survives</span>
+        <span><i style={{ background: 'rgb(var(--board-red))' }} />Hits liquidation · {fmtPct(share, 0)}</span>
         {trigger ? <span><i style={{ background: '#F7931A' }} />Guard fires first · {fmtPct(guardShare, 0)}</span> : null}
       </div>
     </div>

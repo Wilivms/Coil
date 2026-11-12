@@ -69,7 +69,7 @@ export function FlowGraph({ nodes, pulseKey, footer, title, controls }: {
     tl.fromTo(
       els,
       { borderColor: 'rgba(247,147,26,0.9)' },
-      { borderColor: 'rgba(255,255,255,0.08)', duration: 0.9, stagger: 0.12, ease: 'power2.out', clearProps: 'borderColor' },
+      { borderColor: 'var(--board-rule)', duration: 0.9, stagger: 0.12, ease: 'power2.out', clearProps: 'borderColor' },
     )
     return () => {
       tl.kill()
@@ -93,10 +93,10 @@ export function FlowGraph({ nodes, pulseKey, footer, title, controls }: {
           </defs>
           {wires.map((w, i) => (
             <g key={i}>
-              <path id={`wire-${i}`} d={w.d} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1.5" />
+              <path id={`wire-${i}`} d={w.d} fill="none" style={{ stroke: 'var(--board-wire)' }} strokeWidth="1.5" />
               <path d={w.d} fill="none" stroke="url(#wireGrad)" strokeWidth="1.5" strokeDasharray="4 8" className={animate ? 'wire-flow' : ''} />
-              <circle cx={w.a[0]} cy={w.a[1]} r="4.5" fill="#0c0c0e" stroke="#F7931A" strokeWidth="2" />
-              <circle cx={w.b[0]} cy={w.b[1]} r="4.5" fill="#0c0c0e" stroke="#F7931A" strokeWidth="2" />
+              <circle cx={w.a[0]} cy={w.a[1]} r="4.5" style={{ fill: 'var(--board)' }} stroke="#F7931A" strokeWidth="2" />
+              <circle cx={w.b[0]} cy={w.b[1]} r="4.5" style={{ fill: 'var(--board)' }} stroke="#F7931A" strokeWidth="2" />
               {animate && (
                 <circle r="3" fill="#F7931A">
                   <animateMotion dur="2.2s" begin={`${i * 0.45}s`} repeatCount="indefinite" keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="0.4 0 0.2 1">
